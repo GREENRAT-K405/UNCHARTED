@@ -2,12 +2,14 @@
 
     python scripts/smoke.py [base_url]
 
-Signs in as a dev caregiver, opens the demo family, resets it, pairs a dev "tablet",
-then plays the demo: the tablet calls Riya, Riya (with the call's join token) speaks,
-the memory agent runs, and the guard, the next brief and the review queue are checked.
+Signs in as a dev caregiver, opens the demo family, resets it, pairs a dev "tablet", gives Riya a (synthetic)
+face, then plays the demo: the tablet starts a meet, Riya joins and is recognised by her face descriptor, Riya
+(with the call's join token) speaks, the memory agent runs, and the guard, the next brief and the review queue
+are checked. Faces are random 128-number vectors here; real matching accuracy is tested in the browser.
 Needs the backend in dev auth mode (no FIREBASE_PROJECT_ID).
 """
 import json
+import random
 import sys
 import time
 import urllib.request
@@ -47,11 +49,23 @@ call("POST", "/demo/reset")
 code = call("POST", "/devices/pair-code", as_=TABLET)["code"]
 call("POST", f"/circles/{pid}/devices", {"code": code, "label": "Smoke tablet"})
 token = TABLET  # from here on, act as Aaji's tablet
-contacts = {c["name"]: c for c in call("GET", f"/patients/{pid}/contacts")}
+contacts = {c["name"]: c for c in call("GET", f"/patients/{pid}/contacts", as_=CAREGIVER)}
 riya = contacts["Riya"]
+random.seed(7)
+RIYA_FACE = [random.uniform(-0.3, 0.3) for _ in range(128)]
+call("POST", f"/contacts/{riya['id']}/faces", {"descriptor": RIYA_FACE}, as_=CAREGIVER)
+
+
+def start_meet(**extra):
+    """The tablet starts a meet; Riya joins and her face is recognised."""
+    res = call("POST", "/calls", {"patient_id": pid, **extra})
+    if res.get("allowed"):
+        who = call("POST", f"/calls/{res['call_id']}/identify", {"descriptors": [RIYA_FACE] * 4})
+        assert who["status"] == "matched" and who["person"]["name"] == "Riya", who
+    return res
 
 print("\n1. first call")
-start = call("POST", "/calls", {"patient_id": pid, "contact_id": riya["id"]})
+start = start_meet()
 ok &= check(start["allowed"], "call allowed")
 cid = start["call_id"]
 join_token = start["join_url"].split("?t=")[1]
@@ -91,7 +105,7 @@ ok &= check(any(m["visibility"] == "never_surface" for m in mems), "surgery stor
 ok &= check(any("granddaughter" in m["content"] and m["status"] == "active" for m in mems), "caregiver relationship untouched")
 
 print("\n3. repeat-call guard")
-again = call("POST", "/calls", {"patient_id": pid, "contact_id": riya["id"]})
+again = call("POST", "/calls", {"patient_id": pid})
 ok &= check(not again["allowed"] and again["can_override"], "guard fired with 'call anyway'")
 print("   message:", again.get("message"))
 
@@ -101,7 +115,7 @@ now = datetime.fromisoformat(call("GET", "/clock")["now"])
 days = (datetime.fromisoformat(exam["event_date"]) - now).total_seconds() / 86400 + 1
 print(f"   shifting demo clock +{days:.1f} days")
 call("POST", "/clock", {"shift_days": days}, as_=CAREGIVER)
-start2 = call("POST", "/calls", {"patient_id": pid, "contact_id": riya["id"], "force": True})
+start2 = start_meet(force=True)
 brief2 = call("GET", f"/calls/{start2['call_id']}/brief")
 text2 = json.dumps(brief2["card"]).lower()
 print("   brief:", " / ".join(l["text"] for l in brief2["card"]["lines"]), "| ask:", brief2["card"]["suggestions"])

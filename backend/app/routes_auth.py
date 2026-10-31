@@ -27,9 +27,13 @@ async def _circles(p: Principal) -> list[dict]:
 
 
 def _me(p: Principal, circles: list[dict]) -> dict:
+    contact = next(iter(p.contacts.values()), None)
     return {"kind": p.kind, "uid": p.uid, "provider": p.provider, "name": p.name, "email": p.email,
             "picture": p.picture, "user_id": str(p.user["_id"]) if p.user else None, "circles": circles,
-            "device": ms.serialize(p.device) if p.device else None, "auth_mode": settings.auth_mode}
+            "device": ms.serialize(p.device) if p.device else None, "auth_mode": settings.auth_mode,
+            "contact": ms.serialize({k: v for k, v in contact.items() if k not in ("faces", "firebase_uid")}) if contact else None,
+            "home": {"caregiver": "/caregiver", "patient": "/patient", "device": "/patient",
+                     "relative": "/relative"}.get(p.kind, "/login")}
 
 
 @router.get("/me")
@@ -40,8 +44,8 @@ async def me(p: Principal = Depends(auth.current)):
 @router.post("/auth/session")
 async def session(p: Principal = Depends(auth.current)):
     """Called once after sign-in: records the sign-in and returns the user's circles."""
-    if p.kind == "caregiver":
-        await auth.log_auth_event("sign_in", p)
+    if p.kind in ("caregiver", "patient", "relative"):
+        await auth.log_auth_event("sign_in", p, p.patient_ids[0] if p.patient_ids else None)
     return _me(p, await _circles(p))
 
 
@@ -81,6 +85,33 @@ async def join_demo(p: Principal = Depends(auth.current)):
     auth.invalidate(p.uid)
     await auth.log_auth_event("member_joined", p, demo["_id"], via="demo")
     return ms.serialize(demo)
+
+
+class PatientPatch(BaseModel):
+    name: str | None = None
+    full_name: str | None = None
+    login_email: str | None = None  # the Google account the patient signs in with ("" removes it)
+
+
+@router.patch("/circles/{pid}")
+async def update_patient(pid: str, body: PatientPatch, p: Principal = Depends(auth.current)):
+    patient_id = auth.require_access(p, pid, role="family")
+    sets = {}
+    if body.name and body.name.strip():
+        sets["name"] = body.name.strip()
+    if body.full_name is not None:
+        sets["full_name"] = body.full_name.strip()
+    if body.login_email is not None:
+        email = body.login_email.strip().lower()
+        if email and "@" not in email:
+            raise HTTPException(400, "that doesn't look like an email address")
+        if email and await db.users.find_one({"login_email": email, "_id": {"$ne": patient_id}}):
+            raise HTTPException(400, "that email is already used for another patient")
+        sets["login_email"] = email or None
+    if sets:
+        await db.users.update_one({"_id": patient_id}, {"$set": sets})
+        auth.invalidate()
+    return ms.serialize(await db.users.find_one({"_id": patient_id}))
 
 
 @router.get("/circles/{pid}/members")
@@ -171,7 +202,7 @@ async def accept_invite(body: AcceptIn, p: Principal = Depends(auth.current)):
 @router.post("/devices/pair-code")
 async def pair_code(p: Principal = Depends(auth.current)):
     """Called by an unpaired tablet: returns a 6-digit code to show in very large type."""
-    if p.kind == "device":
+    if p.kind in ("device", "patient"):
         return {"paired": True}
     if p.kind != "unpaired_device":
         raise HTTPException(400, "only a patient device needs a pairing code")
@@ -190,6 +221,8 @@ async def pair_code(p: Principal = Depends(auth.current)):
 
 @router.get("/devices/me")
 async def device_me(p: Principal = Depends(auth.current)):
+    if p.kind == "patient":
+        return {"paired": True, "device": None, "patient": ms.serialize(p.patient)}
     if p.kind != "device":
         return {"paired": False}
     patient = await db.users.find_one({"_id": p.device["patient_id"]})

@@ -151,6 +151,9 @@ npm run build
 
 FastAPI then serves `frontend/dist` on http://localhost:8000.
 
+To deploy this as one service (Docker, `render.yaml`, Atlas, Firebase authorized domains, TURN) see
+[docs/roles-and-deploy.md](docs/roles-and-deploy.md).
+
 ## 8. Stop and clean up
 
 ```bash

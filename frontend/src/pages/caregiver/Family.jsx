@@ -135,6 +135,7 @@ export default function Family({ ctx, refreshMe }) {
         </div>
 
         <div className="col">
+          <PatientSignIn patient={patient} canEdit={canEdit} refreshMe={refreshMe} />
           <div className="panel">
             <div className="panel-title">Patient devices <span className="panel-sub">no passwords for {patient.name}</span></div>
             <p className="muted small">
@@ -183,5 +184,35 @@ export default function Family({ ctx, refreshMe }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** The Google account the patient signs in with. Alternative to pairing a tablet with a code. */
+function PatientSignIn({ patient, canEdit, refreshMe }) {
+  const [email, setEmail] = useState(patient.login_email || "");
+  const [msg, setMsg] = useState(null);
+  async function save(e) {
+    e.preventDefault();
+    try {
+      await api.patch(`/circles/${patient.id}`, { login_email: email });
+      setMsg({ ok: true, text: email ? `${patient.name} can now sign in with Google as ${email}.` : "Google sign-in removed." });
+      refreshMe?.();
+    } catch (err) {
+      setMsg({ ok: false, text: err.message });
+    }
+  }
+  return (
+    <form className="panel form" onSubmit={save}>
+      <div className="panel-title">{patient.name}'s sign-in <span className="panel-sub">optional</span></div>
+      <p className="muted small">
+        If {patient.name} has a Google account, enter it here. On their screen they choose Sign in with Google and see only
+        their upcoming meets. Or skip this and pair a tablet below, which needs no account at all.
+      </p>
+      <div className="row">
+        <input type="email" value={email} disabled={!canEdit} onChange={(e) => setEmail(e.target.value)} placeholder="name@gmail.com" />
+        {canEdit && <button className="btn">Save</button>}
+      </div>
+      {msg && <div className={msg.ok ? "auth-notice" : "auth-error"}>{msg.text}</div>}
+    </form>
   );
 }

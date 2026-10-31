@@ -179,7 +179,7 @@ def _label(d: date) -> str:
 async def _wipe(patient_id: ObjectId):
     call_ids = [c["_id"] async for c in db.calls.find({"patient_id": patient_id}, {"_id": 1})]
     await db.transcript_chunks.delete_many({"call_id": {"$in": call_ids}})
-    for coll in (db.calls, db.contacts, db.devices, db.auth_events):
+    for coll in (db.calls, db.contacts, db.devices, db.auth_events, db.meets):
         await coll.delete_many({"patient_id": patient_id})
     for coll in (db.memories, db.briefs, db.memory_events):
         await coll.delete_many({"owner_id": patient_id})
@@ -196,7 +196,7 @@ async def seed_demo() -> dict:
     setup_at = _local(start, 9, 30)
 
     patient = await db.users.find_one({"role": "patient", "demo": True})
-    fields = {"name": "Aaji", "full_name": "Sunanda Patil", "role": "patient", "demo": True, "language": "en-IN",
+    fields = {"name": "Aaji", "full_name": "Sunanda Patil", "role": "patient", "demo": True, "language": "en-IN", "login_email": None,
               "age": 74, "city": "Pune", "created_at": setup_at}
     if patient:
         await _wipe(patient["_id"])
@@ -248,6 +248,7 @@ async def seed_demo() -> dict:
         for order, c in enumerate(CONTACTS):
             doc = {"patient_id": pid, "name": c["name"], "nicknames": c["nicknames"], "relation": c["relation"],
                    "relation_detail": c.get("detail"), "phone": c["phone"], "photo": None, "color": c["color"],
+                   "email": f"{c['key']}@demo.pehchaan.app", "faces": [],
                    "status": "active", "primary_caregiver": c.get("primary", False),
                    "created_at": setup_at + timedelta(seconds=order), "added_by": "Rahul Patil"}
             doc["_id"] = (await db.contacts.insert_one(doc)).inserted_id
@@ -269,6 +270,8 @@ async def seed_demo() -> dict:
             await ms.insert_memory(owner_id=pid, contact_id=None, type=mtype, content=text, source=caregiver_src,
                                    trust=1.0, importance=1.0 if mtype == "sensitive" else 0.6, visibility=vis,
                                    actor="Sunita Kulkarni" if "Minu" in text else "Rahul Patil", embedding=vectors[text])
+
+    replayed: list[tuple] = []  # (call id, contact key, started at, seconds) for linking meets and notes
 
     # ---- call schedule
     keys = {c["key"]: c for c in CONTACTS}
@@ -328,6 +331,7 @@ async def seed_demo() -> dict:
                           "message": f"You spoke to {c['name']} a little while ago. Do you still want to call?"} if overrode else None}
         call["_id"] = (await db.calls.insert_one(call)).inserted_id
         call_count += 1
+        replayed.append((call["_id"], key, at, duration))
 
         if idx >= first_briefed:
             with clock.frozen(at):
@@ -416,6 +420,42 @@ async def seed_demo() -> dict:
                                source={"kind": "caregiver", "origin": "caregiver", "by": "Meera Patil"}, trust=1.0,
                                importance=0.5, actor="Meera Patil")
 
+    # ---- meets: past ones linked to real calls, upcoming ones the patient will see on her screen
+    names = {k: v["name"] for k, v in contacts.items()}
+    for call_id, key, at, secs in replayed[-14:]:
+        meet = {"patient_id": pid, "title": f"Catch-up with {names[key]}", "scheduled_at": at, "duration_min": max(5, secs // 60),
+                "contact_ids": [contacts[key]["_id"]], "agenda": None, "status": "done", "call_id": call_id,
+                "created_by": "Rahul Patil", "created_at": at - timedelta(days=1)}
+        meet_id = (await db.meets.insert_one(meet)).inserted_id
+        await db.calls.update_one({"_id": call_id}, {"$set": {"meet_id": meet_id, "title": meet["title"]}})
+    notes = [
+        ("Sunita", "Aaji was cheerful and asked twice about Kavya's dance class. Good to mention it again."),
+        ("Anil", "Aaji got a little confused about where Anil lives. Gently remind her: Kolhapur."),
+        ("Lata", "They planned Thursday's bhajan together. Aaji remembered every song."),
+        ("Arjun", "Talked about the cricket final. Aaji was proud and kept repeating his name."),
+    ]
+    for who, text in notes:
+        mine = [r for r in replayed if names[r[1]] == who]
+        if mine:
+            await db.calls.update_one({"_id": mine[-1][0]}, {"$set": {"caretaker_note": text, "note_by": "Rahul Patil",
+                                                                    "important": who in ("Anil", "Sunita")}})
+    local_today = now.astimezone(TZ).date()
+
+    def at_day(offset_days, hour, minute=0):
+        return _local(local_today + timedelta(days=offset_days), hour, minute)
+
+    upcoming = [
+        ("Evening chat with Meera", now + timedelta(minutes=20), ["meera"], "Ask about the school annual day."),
+        ("Chai and chat with Lata", at_day(1, 17), ["lata"], "Lata is bringing chakli."),
+        ("Doctor visit: call with Rahul", at_day(2, 10, 30), ["rahul"], "Before the appointment with Dr. Deshpande at 11."),
+        ("Family video call", at_day(3, 19), ["sunita", "kavya", "vikram"], "Sunita and Vikram's anniversary is on Thursday."),
+        ("Diwali plans with Anil", at_day(8, 18), ["anil"], None),
+    ]
+    for title, when, keys_, agenda in upcoming:
+        await db.meets.insert_one({"patient_id": pid, "title": title, "scheduled_at": when, "duration_min": 30,
+                                   "contact_ids": [contacts[k]["_id"] for k in keys_], "agenda": agenda,
+                                   "status": "scheduled", "created_by": "Rahul Patil", "created_at": now - timedelta(days=2)})
+
     # ---- retrieval stats & feedback so the inspector has something to show
     async for m in db.memories.find({"owner_id": pid, "status": "active", "type": {"$in": ["fact", "preference", "event"]}}):
         if rng.random() < 0.3:
@@ -423,10 +463,11 @@ async def seed_demo() -> dict:
             await db.memories.update_one({"_id": m["_id"]}, {"$set": {"feedback": {"helpful": helpful,
                                                                                   "not_helpful": rng.randint(0, 1)}}})
 
-    # ---- a patient-requested contact waiting for approval, and recent sign-ins
+    # ---- an unverified guest the face matcher met and saved for the caretaker to review, and recent sign-ins
     await db.contacts.insert_one({"patient_id": pid, "name": PENDING_CONTACT["name"], "nicknames": [], "relation": "unknown",
-                                  "status": "pending", "photo": None, "color": "#8a8f98", "primary_caregiver": False,
-                                  "requested_by": "patient", "created_at": now - timedelta(days=PENDING_CONTACT["days_ago"])})
+                                  "status": "guest", "photo": None, "faces": [], "color": "#8a8f98", "primary_caregiver": False,
+                                  "first_seen": now - timedelta(days=PENDING_CONTACT["days_ago"]),
+                                  "created_at": now - timedelta(days=PENDING_CONTACT["days_ago"])})
     for u in FAMILY_USERS:
         for _ in range(rng.randint(3, 9)):
             await db.auth_events.insert_one({"kind": "sign_in", "patient_id": pid, "user_id": users[u["key"]],

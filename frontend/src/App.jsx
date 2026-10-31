@@ -1,10 +1,10 @@
 import { Link, Route, Routes } from "react-router-dom";
 import PatientHome from "./pages/PatientHome.jsx";
-import CallPage from "./pages/CallPage.jsx";
 import JoinPage from "./pages/JoinPage.jsx";
 import Caregiver from "./pages/Caregiver.jsx";
 import Login from "./pages/Login.jsx";
-import PatientGate from "./pages/PatientGate.jsx";
+import PatientGate, { PatientCall } from "./pages/PatientGate.jsx";
+import RelativeHome, { RelativeCall } from "./pages/RelativeHome.jsx";
 import { CaregiverAuthProvider } from "./lib/auth.jsx";
 
 function Landing() {
@@ -23,17 +23,21 @@ function Landing() {
           A video-calling companion for people living with Alzheimer's. It remembers who is calling and what you talked
           about, so every call starts with recognition.
         </p>
-        <div className="landing-links">
-          <Link className="landing-card" to="/patient">
-            <span className="lc-title">Patient screen</span>
-            <span className="lc-sub">The tablet: big faces, one tap to call, no password</span>
-          </Link>
+        <div className="landing-links three">
           <Link className="landing-card" to="/caregiver">
-            <span className="lc-title">Caregiver dashboard</span>
-            <span className="lc-sub">Sign in with Google to review memories and insights</span>
+            <span className="lc-title">Caretaker</span>
+            <span className="lc-sub">Add relatives with their photos, schedule meets, read past meets and notes</span>
+          </Link>
+          <Link className="landing-card" to="/patient">
+            <span className="lc-title">Patient</span>
+            <span className="lc-sub">Upcoming meets and one big Join button. The screen recognises who joins.</span>
+          </Link>
+          <Link className="landing-card" to="/relative">
+            <span className="lc-title">Relative</span>
+            <span className="lc-sub">See the patient's invites and scheduled meets, and join with one tap</span>
           </Link>
         </div>
-        <p className="fine">Family members join calls from the link the patient's call creates (/join/…).</p>
+        <p className="fine">Have a meeting code? <Link to="/join">Join as a guest</Link>.</p>
       </div>
     </div>
   );
@@ -44,8 +48,11 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/patient" element={<PatientGate>{(patient) => <PatientHome patient={patient} />}</PatientGate>} />
-      <Route path="/call/:callId" element={<PatientGate>{() => <CallPage role="patient" />}</PatientGate>} />
+      <Route path="/call/:callId" element={<PatientGate>{() => <PatientCall />}</PatientGate>} />
+      <Route path="/join" element={<JoinPage />} />
       <Route path="/join/:callId" element={<JoinPage />} />
+      <Route path="/relative" element={<CaregiverAuthProvider><RelativeHome /></CaregiverAuthProvider>} />
+      <Route path="/meet/:callId" element={<CaregiverAuthProvider><RelativeCall /></CaregiverAuthProvider>} />
       <Route path="/login" element={<CaregiverAuthProvider><Login /></CaregiverAuthProvider>} />
       <Route path="/caregiver" element={<CaregiverAuthProvider><Caregiver /></CaregiverAuthProvider>} />
     </Routes>

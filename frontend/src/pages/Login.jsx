@@ -42,7 +42,7 @@ export default function Login() {
   useEffect(() => {
     if (!user || user.anonymous || !me) return;
     (async () => {
-      if (invite) {
+      if (invite && me.kind === "caregiver") {
         try {
           await api.post("/invites/accept", { code: invite });
         } catch (e) {
@@ -50,7 +50,11 @@ export default function Login() {
           return;
         }
       }
-      nav(params.get("next") || "/caregiver", { replace: true });
+      const next = params.get("next");
+      // Relatives and patients go to their own screens; "next" is honoured only for the matching kind.
+      const home = me.home || "/caregiver";
+      nav(next && (me.kind === "caregiver" || next.startsWith(home) || (me.kind === "relative" && next.startsWith("/meet/"))) ? next : home,
+        { replace: true });
     })();
   }, [user, me]);
 
@@ -147,7 +151,10 @@ export default function Login() {
             {mode !== "signin" && <button className="btn-link" onClick={() => setMode("signin")}>Back to sign in</button>}
           </div>
         </div>
-        <p className="auth-fine center">Setting up the patient's tablet? Open <Link to="/patient">/patient</Link> on it.</p>
+        <p className="auth-fine center">
+          Relatives and patients: sign in with the Google account for the email your caretaker added.<br />
+          Setting up a tablet with no account? Open <Link to="/patient">/patient</Link> on it.
+        </p>
       </div>
     </div>
   );

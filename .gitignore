@@ -10,3 +10,6 @@ __pycache__/
 *firebase-adminsdk*.json
 *service-account*.json
 *serviceAccount*.json
+
+# local face-accuracy test photos (not part of the app)
+frontend/public/test-faces/

@@ -28,28 +28,30 @@ def _in_window(now_t: time, start: time, end: time) -> bool:
     return start <= now_t < end if start <= end else (now_t >= start or now_t < end)
 
 
-async def check(owner_id: ObjectId, contact: dict) -> dict:
+async def check(owner_id: ObjectId, contact: dict | None) -> dict:
+    """contact=None checks the patient's calling in general (a new meet whose guest isn't known yet)."""
     now = clock.now()
     local = now.astimezone(settings.tz)
-    cid = contact["_id"]
-    name = contact["name"]
+    cid = contact["_id"] if contact else None
+    name = contact["name"] if contact else "your family"
+    scope = {"patient_id": owner_id, "status": {"$nin": ["cancelled", "blocked"]}}
+    if cid:
+        scope["contact_id"] = cid
 
     rules = [c async for c in db.memories.find({
         "owner_id": owner_id, "type": "constraint", "status": "active", "rule": {"$exists": True},
-        "$or": [{"contact_id": cid}, {"contact_id": None}]})]
+        "$or": [{"contact_id": cid}, {"contact_id": None}] if cid else [{"contact_id": None}]})]
     rules = [r for r in rules if ms.is_live(r, now)]
 
-    last = await db.calls.find_one({"patient_id": owner_id, "contact_id": cid, "status": {"$nin": ["cancelled", "blocked"]}},
-                                   sort=[("started_at", -1)])
+    last = await db.calls.find_one(scope, sort=[("started_at", -1)])
     day_start = datetime.combine(local.date(), time(0), tzinfo=settings.tz)
-    today_count = await db.calls.count_documents({
-        "patient_id": owner_id, "contact_id": cid, "status": {"$nin": ["cancelled", "blocked"]}, "started_at": {"$gte": day_start}})
+    today_count = await db.calls.count_documents({**scope, "started_at": {"$gte": day_start}})
 
     # The most relevant upcoming plan, to reassure rather than just refuse.
     plan = await db.memories.find_one({
         "owner_id": owner_id, "contact_id": cid, "status": "active", "visibility": "patient",
         "type": {"$in": ["plan", "event"]}, "event_date": {"$gte": now - timedelta(hours=12)}},
-        sort=[("event_date", 1)])
+        sort=[("event_date", 1)]) if cid else None
     patient = await db.users.find_one({"_id": owner_id}, {"name": 1})
     plan_text = ""
     if plan and ms.is_live(plan, now):
@@ -73,6 +75,9 @@ async def check(owner_id: ObjectId, contact: dict) -> dict:
     gap_rule = next((r for r in rules if r["rule"].get("kind") == "min_gap_minutes"), None)
     gap = int(gap_rule["rule"]["value"]) if gap_rule else settings.default_min_gap_minutes
     if last and (now - last["started_at"]) < timedelta(minutes=gap):
+        if not contact and last.get("contact_id"):
+            who = await db.contacts.find_one({"_id": last["contact_id"]}, {"name": 1})
+            name = who["name"] if who else name
         summary = f" {last['recap']}" if last.get("recap") and last.get("status") == "processed" else ""
         return {**base, "allowed": False, "can_override": True,
                 "constraint_id": str(gap_rule["_id"]) if gap_rule else None,

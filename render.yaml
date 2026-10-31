@@ -1,0 +1,29 @@
+# Render Blueprint: New > Blueprint, pick this repo. Fill the "sync: false" values in the dashboard.
+services:
+  - type: web
+    name: pehchaan
+    runtime: docker
+    plan: starter            # free also works, but sleeps when idle (about a minute to wake)
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: MONGODB_URI     # Atlas connection string; allow 0.0.0.0/0 in Atlas Network Access
+        sync: false
+      - key: MONGODB_DB
+        value: pehchaan
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_WEB_API_KEY   # Firebase web config apiKey (public identifier)
+        sync: false
+      - key: FIREBASE_APP_ID        # Firebase web config appId
+        sync: false
+      - key: PUBLIC_BASE_URL        # e.g. https://pehchaan.onrender.com (used in invite links)
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
+      - key: VOYAGE_BASE_URL
+        value: https://ai.mongodb.com/v1
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: TIMEZONE
+        value: Asia/Kolkata

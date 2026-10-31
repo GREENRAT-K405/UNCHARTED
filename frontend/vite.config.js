@@ -6,6 +6,8 @@ import react from "@vitejs/plugin-react";
 // Chrome's "Insecure origins treated as secure" flag or a tunnel (see README).
 export default defineConfig({
   plugins: [react()],
+  // face-api (with TensorFlow.js) is one big chunk, loaded only on screens that recognise faces.
+  build: { chunkSizeWarningLimit: 1500 },
   server: {
     port: 5173,
     proxy: {

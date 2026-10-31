@@ -106,9 +106,14 @@ async def process_call(call_id: ObjectId) -> dict:
     call = await db.calls.find_one({"_id": call_id})
     if not call:
         raise ValueError("call not found")
-    contact = await db.contacts.find_one({"_id": call["contact_id"]})
+    contact = await db.contacts.find_one({"_id": call["contact_id"]}) if call.get("contact_id") else None
     patient = await db.users.find_one({"_id": call["patient_id"]})
     owner_id = patient["_id"]
+    if contact is None:  # nobody joined, or nobody could be identified
+        await db.calls.update_one({"_id": call_id}, {"$set": {
+            "status": "processed", "summary": "Nobody else joined this meet.", "recap": "",
+            "processed_at": clock.now(), "agent": {"mode": "none", "candidates": 0, "actions": []}}})
+        return {"actions": []}
     await db.calls.update_one({"_id": call_id}, {"$set": {"status": "processing"}})
 
     lines = await _transcript(call_id)

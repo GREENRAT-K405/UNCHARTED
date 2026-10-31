@@ -19,6 +19,13 @@ export default function Calls({ ctx }) {
     if (sel) api.get(`/calls/${sel.id}/transcript`).then(setTranscript);
   }, [sel?.id, tick]);
 
+  useEffect(() => {
+    if (ctx.focusCall) {
+      const c = calls.find((x) => x.id === ctx.focusCall);
+      if (c) setSel(c);
+    }
+  }, [ctx.focusCall, calls]);
+
   async function reprocess() {
     await api.post(`/calls/${sel.id}/reprocess`);
     ctx.refresh();
@@ -40,7 +47,8 @@ export default function Calls({ ctx }) {
       {sel && (
         <div className="call-detail">
           <div className="panel">
-            <div className="panel-title">Call with {sel.contact_name} <span className="panel-sub">{fmtDateTime(sel.started_at)}</span></div>
+            <div className="panel-title">{sel.title || "Meet"} with {sel.contact_name} <span className="panel-sub">{fmtDateTime(sel.started_at)}</span></div>
+            {sel.status !== "blocked" && <NoteEditor key={sel.id} call={sel} canEdit={ctx.canEdit} onSaved={ctx.refresh} />}
             {sel.summary && <p className="summary">{sel.summary}</p>}
             {sel.recap && <p className="muted">Read to {patient.name} after the call: “{sel.recap}”</p>}
             {sel.guard && <p className="muted">Repeat-call guard fired: {sel.guard.message} ({sel.guard.reason})</p>}
@@ -76,6 +84,33 @@ export default function Calls({ ctx }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** The caretaker's note on a meet, and a star for important discussions. */
+function NoteEditor({ call, canEdit, onSaved }) {
+  const [note, setNote] = useState(call.caretaker_note || "");
+  const [important, setImportant] = useState(!!call.important);
+  const [saved, setSaved] = useState(false);
+  async function save(next = {}) {
+    await api.patch(`/calls/${call.id}/note`, { note, important, ...next });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+    onSaved?.();
+  }
+  return (
+    <div className="note-editor">
+      <div className="row space">
+        <span className="sub-title">Your note</span>
+        <button className={`btn-sm ${important ? "star-on" : ""}`} disabled={!canEdit}
+          onClick={() => { setImportant(!important); save({ important: !important }); }}>
+          {important ? "★ Important" : "☆ Mark important"}
+        </button>
+      </div>
+      <textarea rows={2} value={note} disabled={!canEdit} onChange={(e) => setNote(e.target.value)}
+        placeholder="What mattered in this meet? This note is shown to the patient next time they meet this person." />
+      {canEdit && <div className="row"><button className="btn-sm" onClick={() => save()}>Save note</button>{saved && <span className="muted small">Saved</span>}</div>}
     </div>
   );
 }

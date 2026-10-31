@@ -1,17 +1,18 @@
 """Authentication (Firebase ID tokens) and authorization (care circles in MongoDB).
 
-Identity:
-  - Caregivers sign in with Google or email/password through Firebase Auth.
-  - A patient's tablet signs in *anonymously* and is then paired to the patient by a
-    caregiver entering the 6-digit code the tablet shows. The patient never types a
-    password and is never logged out; caregivers can unpair the device remotely.
-  - Family members who join a call use a per-call join token, not an account.
+Three kinds of people sign in:
+  caregiver  the caretaker/admin: creates the care circle, manages relatives, schedules meets.
+             Role inside a circle (owner / family / viewer) lives in `memberships`.
+  patient    signs in with Google using the email the caretaker entered (`users.login_email`),
+             or is a tablet paired with a 6-digit code (anonymous Firebase sign-in).
+  relative   signs in with Google using the email the caretaker entered for them (`contacts.email`).
 
-Authorization (all in MongoDB): `memberships` maps caregiver users to patients with a
-role (owner > family > viewer); `devices` maps paired tablets to one patient.
+Anyone else who signs in is simply a new caretaker with no circle yet (they can create one).
+Email-based matching requires a *verified* email, so nobody can claim a relative's address by
+signing up with it.
 
-Firebase ID tokens are RS256 JWTs signed by Google; we verify them with Google's
-published certificates (no service account needed, only the project id).
+Firebase ID tokens are RS256 JWTs signed by Google; we verify them with Google's published
+certificates (no service account needed, only the project id).
 """
 import asyncio
 import logging
@@ -39,24 +40,35 @@ PRINCIPAL_TTL = 30.0
 @dataclass
 class Principal:
     uid: str
-    kind: str  # caregiver | device | unpaired_device
+    kind: str  # caregiver | patient | device | unpaired_device | relative
     provider: str
     email: str | None = None
     name: str | None = None
     picture: str | None = None
     user: dict | None = None
     device: dict | None = None
+    patient: dict | None = None  # kind == patient
+    contacts: dict[ObjectId, dict] = field(default_factory=dict)  # kind == relative: patient id -> contact
     roles: dict[ObjectId, str] = field(default_factory=dict)
 
     @property
     def display(self) -> str:
         if self.kind == "device":
             return f"device:{self.device.get('label', 'tablet')}" if self.device else "device"
+        if self.kind == "relative" and self.contacts:
+            return next(iter(self.contacts.values())).get("name") or "relative"
+        if self.kind == "patient" and self.patient:
+            return self.patient.get("name") or "patient"
         return self.name or self.email or "caregiver"
 
     @property
     def patient_ids(self) -> list[ObjectId]:
         return list(self.roles)
+
+    @property
+    def is_patient_side(self) -> bool:
+        """The patient on a tablet or signed in with Google: both act as the patient."""
+        return self.kind in ("device", "patient")
 
 
 # ---------------------------------------------------------------- token verification
@@ -92,7 +104,7 @@ def _verify_dev(token: str) -> dict:
     if token.startswith("dev:"):
         uid, _, rest = token[4:].partition("|")
         email, _, name = rest.partition("|")
-        return {"sub": f"dev-{uid}", "email": email or None, "name": name or None,
+        return {"sub": f"dev-{uid}", "email": email or None, "name": name or None, "email_verified": True,
                 "firebase": {"sign_in_provider": "dev"}}
     raise ValueError("not a dev token")
 
@@ -114,6 +126,19 @@ def invalidate(uid: str | None = None):
         _principal_cache.pop(uid, None)
 
 
+async def _match_email(email: str | None):
+    """Is this verified email a patient's login or a relative the caretaker added?"""
+    if not email:
+        return None
+    patient = await db.users.find_one({"role": "patient", "login_email": email})
+    if patient:
+        return "patient", patient
+    contacts = [c async for c in db.contacts.find({"email": email, "status": "active"})]
+    if contacts:
+        return "relative", contacts
+    return None
+
+
 async def resolve(claims: dict) -> Principal:
     uid = claims["sub"]
     cached = _principal_cache.get(uid)
@@ -129,16 +154,58 @@ async def resolve(claims: dict) -> Principal:
                           roles={device["patient_id"]: "device"})
         else:
             p = Principal(uid=uid, kind="unpaired_device", provider=provider)
-    else:
-        user = await db.users.find_one_and_update(
-            {"firebase_uid": uid},
-            {"$set": {"email": claims.get("email"), "name": claims.get("name") or claims.get("email"),
-                      "picture": claims.get("picture"), "provider": provider, "last_seen": clock.now()},
-             "$setOnInsert": {"role": "caregiver", "created_at": clock.now()}},
-            upsert=True, return_document=True)
+        _principal_cache[uid] = (time.time() + PRINCIPAL_TTL, p)
+        return p
+
+    email = (claims.get("email") or "").strip().lower() or None
+    verified = bool(claims.get("email_verified"))
+    picture = claims.get("picture")
+    now = clock.now()
+    user = await db.users.find_one({"firebase_uid": uid})
+
+    if user and user.get("role") == "patient":  # a patient who signed in with Google before
+        if user.get("login_email") != email:
+            raise HTTPException(403, "This sign-in no longer has access.")
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_seen": now, "picture": picture}})
+        p = Principal(uid=uid, kind="patient", provider=provider, email=email, name=user.get("name"),
+                      picture=picture, patient=user, roles={user["_id"]: "device"})
+        _principal_cache[uid] = (time.time() + PRINCIPAL_TTL, p)
+        return p
+
+    roles = {}
+    if user:
         roles = {m["patient_id"]: m["role"] async for m in db.memberships.find({"user_id": user["_id"]})}
-        p = Principal(uid=uid, kind="caregiver", provider=provider, email=claims.get("email"),
-                      name=user.get("name"), picture=claims.get("picture"), user=user, roles=roles)
+    if not roles and verified:
+        match = await _match_email(email)
+        if match and match[0] == "patient":
+            patient = match[1]
+            await db.users.update_one({"_id": patient["_id"]}, {"$set": {"firebase_uid": uid, "last_seen": now,
+                                                                         "picture": picture}})
+            p = Principal(uid=uid, kind="patient", provider=provider, email=email, name=patient.get("name"),
+                          picture=picture, patient=patient, roles={patient["_id"]: "device"})
+            _principal_cache[uid] = (time.time() + PRINCIPAL_TTL, p)
+            await log_auth_event("sign_in", p, patient["_id"])
+            return p
+        if match and match[0] == "relative":
+            await db.contacts.update_many({"email": email, "status": "active"},
+                                          {"$set": {"firebase_uid": uid, "last_login": now}})
+            by_patient = {c["patient_id"]: c for c in match[1]}
+            p = Principal(uid=uid, kind="relative", provider=provider, email=email, name=match[1][0].get("name"),
+                          picture=picture, contacts=by_patient, roles={pid: "relative" for pid in by_patient})
+            _principal_cache[uid] = (time.time() + PRINCIPAL_TTL, p)
+            return p
+
+    # A caretaker (new or returning).
+    user = await db.users.find_one_and_update(
+        {"firebase_uid": uid},
+        {"$set": {"email": email, "name": claims.get("name") or email, "picture": picture, "provider": provider,
+                  "last_seen": now},
+         "$setOnInsert": {"role": "caregiver", "created_at": now}},
+        upsert=True, return_document=True)
+    if not roles:
+        roles = {m["patient_id"]: m["role"] async for m in db.memberships.find({"user_id": user["_id"]})}
+    p = Principal(uid=uid, kind="caregiver", provider=provider, email=email, name=user.get("name"),
+                  picture=picture, user=user, roles=roles)
     _principal_cache[uid] = (time.time() + PRINCIPAL_TTL, p)
     return p
 
@@ -150,7 +217,7 @@ async def principal_from_token(token: str | None) -> Principal:
 
 
 async def current(request: Request) -> Principal:
-    """FastAPI dependency: the signed-in caregiver or paired device."""
+    """FastAPI dependency: whoever is signed in."""
     header = request.headers.get("authorization", "")
     token = header[7:] if header.lower().startswith("bearer ") else None
     return await principal_from_token(token)
@@ -159,19 +226,36 @@ async def current(request: Request) -> Principal:
 # ---------------------------------------------------------------- authorization helpers
 def require_caregiver(p: Principal) -> Principal:
     if p.kind != "caregiver":
-        raise HTTPException(403, "caregiver sign-in required")
+        raise HTTPException(403, "caretaker sign-in required")
     return p
 
 
-def require_access(p: Principal, patient_id, *, role: str = "viewer", allow_device: bool = False) -> ObjectId:
+def require_relative(p: Principal) -> Principal:
+    if p.kind != "relative":
+        raise HTTPException(403, "relative sign-in required")
+    return p
+
+
+def as_object_id(value) -> ObjectId | None:
+    if isinstance(value, ObjectId):
+        return value
+    return ObjectId(str(value)) if ObjectId.is_valid(str(value)) else None
+
+
+def require_access(p: Principal, patient_id, *, role: str = "viewer", allow_device: bool = False,
+                   allow_relative: bool = False) -> ObjectId:
     """Raise unless the principal may act on this patient with at least `role`."""
-    pid = patient_id if isinstance(patient_id, ObjectId) else (ObjectId(str(patient_id)) if ObjectId.is_valid(str(patient_id)) else None)
+    pid = as_object_id(patient_id)
     if pid is None or pid not in p.roles:
         raise HTTPException(404, "patient not found")
     held = p.roles[pid]
     if held == "device":
         if not allow_device:
-            raise HTTPException(403, "not available on the patient's device")
+            raise HTTPException(403, "not available on the patient's screen")
+        return pid
+    if held == "relative":
+        if not allow_relative:
+            raise HTTPException(403, "not available to relatives")
         return pid
     if ROLE_RANK[held] < ROLE_RANK[role]:
         raise HTTPException(403, f"requires {role} access")

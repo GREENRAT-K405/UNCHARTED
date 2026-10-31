@@ -24,6 +24,10 @@ patient taps Riya ─► repeat-call guard (constraint memories) ─► pre-call
 The full product and design spec (personas, data model, agent design, judging-criteria mapping, build plan) is in
 [docs/DESIGN.md](docs/DESIGN.md).
 
+**Three roles** (caretaker, patient, relative), **face matching** of whoever joins the call against the relatives the
+caretaker enrolled (a new face becomes an unverified guest and "first meeting"), and a **single-service Render
+deployment** are described in [docs/roles-and-deploy.md](docs/roles-and-deploy.md).
+
 ## Quick start
 
 Prerequisites: Python 3.11+, Node 18+, Chrome, and either Docker or a MongoDB Atlas cluster.

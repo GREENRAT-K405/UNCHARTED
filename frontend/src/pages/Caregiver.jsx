@@ -9,17 +9,21 @@ import ReviewQueue from "./caregiver/ReviewQueue.jsx";
 import Inspector from "./caregiver/Inspector.jsx";
 import Briefs from "./caregiver/Briefs.jsx";
 import Calls from "./caregiver/Calls.jsx";
-import Contacts from "./caregiver/Contacts.jsx";
+import Relatives from "./caregiver/Relatives.jsx";
+import Meets from "./caregiver/Meets.jsx";
+import Rules from "./caregiver/Rules.jsx";
 import Family from "./caregiver/Family.jsx";
 import Onboarding from "./caregiver/Onboarding.jsx";
 
 const TABS = [
   ["overview", "Overview"],
+  ["relatives", "Relatives"],
+  ["meets", "Meets"],
+  ["calls", "Past meets & notes"],
   ["review", "Review queue"],
   ["memories", "Memory inspector"],
   ["briefs", "Briefs"],
-  ["calls", "Calls"],
-  ["contacts", "Contacts & rules"],
+  ["rules", "Rules & memories"],
   ["family", "Family & devices"],
 ];
 
@@ -33,6 +37,7 @@ export default function Caregiver() {
   if (user === undefined || (user && !me && !error)) return <div className="cg loading">Signing you in…</div>;
   if (!user || user.anonymous) return <Navigate to="/login?next=/caregiver" replace />;
   if (error) return <div className="cg loading">Couldn't reach the server: {error}</div>;
+  if (me.kind !== "caregiver") return <Navigate to={me.home || "/login"} replace />;
   if (me.circles.length === 0) return <Onboarding />;
   return <Dashboard />;
 }
@@ -48,7 +53,11 @@ function Dashboard() {
   const patient = circle.patient;
   const canEdit = circle.role !== "viewer";
 
-  const [tab, setTab] = useState(() => store.get("cg-tab", "overview"));
+  const [tab, setTab] = useState(() => {
+    const t = store.get("cg-tab", "overview");
+    return TABS.some(([id]) => id === t) ? t : "overview";
+  });
+  const [focusCall, setFocusCall] = useState(null);
   const [health, setHealth] = useState(null);
   const [wsState, setWsState] = useState("closed");
   const [feed, setFeed] = useState([]); // change-stream events
@@ -99,8 +108,9 @@ function Dashboard() {
 
   const ctx = useMemo(
     () => ({ patient, role: circle.role, canEdit, me, contacts, tick, refresh: () => setTick((t) => t + 1), offsetMs,
-      titles: titles.current, openMemory: (id) => { setFocusMemory(id); setTab("memories"); }, goTo: setTab }),
-    [patient, circle.role, contacts, tick, offsetMs]
+      titles: titles.current, openMemory: (id) => { setFocusMemory(id); setTab("memories"); }, goTo: setTab,
+      focusCall, openCall: (id) => { setFocusCall(id); setTab("calls"); } }),
+    [patient, circle.role, contacts, tick, offsetMs, focusCall]
   );
 
   async function shiftClock(days) {
@@ -201,7 +211,9 @@ function Dashboard() {
           {tab === "memories" && <Inspector ctx={ctx} focus={focusMemory} onFocus={setFocusMemory} />}
           {tab === "briefs" && <Briefs ctx={ctx} />}
           {tab === "calls" && <Calls ctx={ctx} />}
-          {tab === "contacts" && <Contacts ctx={ctx} />}
+          {tab === "relatives" && <Relatives ctx={ctx} />}
+          {tab === "meets" && <Meets ctx={ctx} />}
+          {tab === "rules" && <Rules ctx={ctx} />}
           {tab === "family" && <Family ctx={ctx} refreshMe={auth.refreshMe} />}
         </div>
       </section>

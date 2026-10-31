@@ -1,7 +1,16 @@
 // Minimal 1:1 WebRTC over our own WebSocket signaling. The patient side always offers;
 // the contact side answers. Either side rebuilds its peer connection when the other rejoins.
 
-const ICE = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }];
+// STUN finds a direct path; the TURN relay from /api/ice carries video when a strict network blocks it.
+const DEFAULT_ICE = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }];
+let icePromise = null;
+function loadIce() {
+  icePromise ??= fetch("/api/ice")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => j?.iceServers || DEFAULT_ICE)
+    .catch(() => DEFAULT_ICE);
+  return icePromise;
+}
 
 export class Peer {
   constructor({ role, send, onRemoteStream, onState }) {
@@ -12,9 +21,11 @@ export class Peer {
     this.localStream = null;
     this.pc = null;
     this.pendingIce = [];
+    this.iceServers = DEFAULT_ICE;
   }
 
   async startMedia() {
+    this.iceServers = await loadIce();
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -33,7 +44,7 @@ export class Peer {
   _build() {
     this.pc?.close();
     this.pendingIce = [];
-    const pc = new RTCPeerConnection({ iceServers: ICE });
+    const pc = new RTCPeerConnection({ iceServers: this.iceServers });
     this.localStream?.getTracks().forEach((t) => pc.addTrack(t, this.localStream));
     if (!this.localStream) {
       pc.addTransceiver("video", { direction: "recvonly" });

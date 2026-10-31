@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 # Export .env into the process so SDKs that read os.environ (ANTHROPIC_API_KEY) see it too.
 load_dotenv(ENV_FILE)
-for _key in ("ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "FIREBASE_PROJECT_ID"):
+for _key in ("ANTHROPIC_API_KEY",):  # the SDK treats an empty key as set; the other settings treat empty as off
     if os.environ.get(_key) == "":  # blank lines in .env must not shadow other credential sources
         del os.environ[_key]
 
@@ -44,6 +44,24 @@ class Settings(BaseSettings):
 
     timezone: str = "Asia/Kolkata"
     public_base_url: str = "http://localhost:5173"
+
+    # Face matching: 128-number descriptors from face-api, compared by Euclidean distance.
+    # <= match is a confident match; match..unsure is shown as "not sure"; beyond is unknown.
+    # Tuned on stressed photos: two different people came as close as 0.47, so a name is only given at <= 0.45.
+    face_match_threshold: float = 0.45
+    face_unsure_threshold: float = 0.60
+    face_match_margin: float = 0.06  # best match must beat the runner-up by this much
+    face_lookalike_threshold: float = 0.40  # refuse to enrol a face this close to someone already in the family
+
+    # WebRTC relay for strict networks (college Wi-Fi). Comma-separated turn: URLs; STUN is always included.
+    turn_urls: str | None = None
+    turn_username: str | None = None
+    turn_credential: str | None = None
+
+    # Firebase web config, injected into the served page at runtime (so one build works anywhere).
+    firebase_web_api_key: str | None = None
+    firebase_app_id: str | None = None
+    firebase_auth_domain: str | None = None
 
     # Auth. With FIREBASE_PROJECT_ID set, every request must carry a Firebase ID token
     # (Google / email sign-in for caregivers, anonymous sign-in for paired patient devices).

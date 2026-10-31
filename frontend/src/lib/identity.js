@@ -1,4 +1,4 @@
-// Identity: Firebase Auth when configured (VITE_FIREBASE_* in frontend/.env), otherwise a
+// Identity: Firebase Auth when configured, otherwise a
 // local "dev" identity that the backend accepts only while it runs without FIREBASE_PROJECT_ID.
 //
 // Two separate identities live side by side in one browser:
@@ -9,16 +9,22 @@
 import { initializeApp } from "firebase/app";
 import {
   GoogleAuthProvider, createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendPasswordResetEmail,
-  signInAnonymously, signInWithEmailAndPassword, signInWithPopup, signInWithRedirect, signOut, updateProfile,
+  sendEmailVerification, signInAnonymously, signInWithEmailAndPassword, signInWithPopup, signInWithRedirect, signOut,
+  updateProfile,
 } from "firebase/auth";
 
+// In production the server injects the config into the page (window.__APP_CONFIG__), so one build runs
+// anywhere; in development it comes from frontend/.env (VITE_FIREBASE_*).
 const env = import.meta.env;
-const config = {
-  apiKey: env.VITE_FIREBASE_API_KEY,
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: env.VITE_FIREBASE_PROJECT_ID,
-  appId: env.VITE_FIREBASE_APP_ID,
-};
+const injected = typeof window !== "undefined" ? window.__APP_CONFIG__ : undefined;
+const config = injected
+  ? injected.firebase || {}
+  : {
+      apiKey: env.VITE_FIREBASE_API_KEY,
+      authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+      projectId: env.VITE_FIREBASE_PROJECT_ID,
+      appId: env.VITE_FIREBASE_APP_ID,
+    };
 export const firebaseEnabled = !!config.apiKey;
 
 const FRIENDLY_ERRORS = {
@@ -66,6 +72,8 @@ function firebaseIdentity(appName) {
     async signUpEmail(name, email, password) {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       if (name) await updateProfile(cred.user, { displayName: name });
+      // Relatives and patients are matched by email only once it is verified.
+      await sendEmailVerification(cred.user).catch(() => {});
       await cred.user.getIdToken(true); // refresh so the token carries the name
     },
     resetPassword: (email) => sendPasswordResetEmail(auth, email),

@@ -275,8 +275,8 @@ export default function Overview({ ctx, feed, liveTranscript }) {
               )}
               {e.type === "contact_request" && (
                 <>
-                  <Chip tone="warn">request</Chip>
-                  <span className="feed-text">{patient.name} asked to add “{e.contact.name}”. Review in Contacts.</span>
+                  <Chip tone="warn">new face</Chip>
+                  <span className="feed-text clickable" onClick={() => goTo("relatives")}>New face on a meet: “{e.contact.name}” was saved as an unverified guest. Review in Relatives.</span>
                 </>
               )}
               <span className="feed-time">{new Date(e.at).toLocaleTimeString("en-IN")}</span>
