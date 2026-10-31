@@ -1,15 +1,19 @@
 :root {
-  --paper: #fbf6ee;
-  --paper-2: #f3ebdf;
-  --card: #ffffff;
-  --ink: #1e1b16;
-  --ink-2: #4b443a;
-  --ink-3: #807666;
-  --line: #e4d9c8;
-  --brand: #1f5c4f;
+  /* Warm kitchen light: oat ground, warm charcoal ink, one forest green, one marigold highlight. */
+  --paper: #f6f2ea;
+  --paper-2: #ece6d9;
+  --card: #fffdf8;
+  --ink: #231f1a;
+  --ink-2: #473f35;
+  --ink-3: #6b6254;
+  --line: #e0d6c4;
+  --brand: #1b5446;
+  --brand-strong: #143f35;
   --brand-ink: #ffffff;
-  --brand-soft: #dcebe5;
-  --accent: #b5532c;
+  --brand-soft: #dbe8e0;
+  --accent: #e9b949;
+  --accent-ink: #3a2a00;
+  --accent-soft: #faeccb;
   --good: #2f7a4f;
   --good-soft: #def0e3;
   --warn: #a8670c;
@@ -19,15 +23,32 @@
   --info: #2d5f93;
   --info-soft: #dde9f6;
   --muted-soft: #ece7df;
-  --radius: 18px;
-  --shadow: 0 1px 2px rgba(40, 30, 10, 0.06), 0 8px 24px rgba(40, 30, 10, 0.06);
+  --focus: #1b5446;
+
+  /* Shape: three radii and two elevations. Things at rest sit on a tone step; only what floats gets a shadow. */
+  --radius: 20px;
+  --r-sm: 12px;
+  --r-lg: 28px;
+  --shadow: 0 1px 2px rgba(40, 30, 10, 0.05), 0 6px 18px rgba(40, 30, 10, 0.05);
+  --shadow-float: 0 12px 40px rgba(30, 22, 8, 0.22);
+
+  /* Space (4px base) and motion: short, soft, transform and opacity only. */
+  --s-1: 4px; --s-2: 8px; --s-3: 16px; --s-4: 24px; --s-5: 40px; --s-6: 64px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+
+  /* Type: Atkinson Hyperlegible does the work. Fraunces is for the patient's greeting and names only. */
   --font: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
-body { margin: 0; font-family: var(--font); color: var(--ink); background: var(--paper); -webkit-font-smoothing: antialiased; }
+body { margin: 0; font-family: var(--font); line-height: 1.5; color: var(--ink); background: var(--paper); -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { text-wrap: balance; }
+p { text-wrap: pretty; }
 button { font-family: inherit; cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: 0.6; }
 input, select, textarea { font: inherit; color: inherit; }
@@ -36,6 +57,17 @@ a { color: var(--brand); }
 .hidden { display: none !important; }
 .muted { color: var(--ink-3); }
 .small { font-size: 0.85rem; }
+/* ---------- base: one focus ring, reachable targets on the gentle screens, reduced motion ---------- */
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.patient-shell :focus-visible, .pair-screen :focus-visible, .modal :focus-visible, .contact-page :focus-visible, .join-card :focus-visible { outline-width: 4px; }
+.call :focus-visible, .ringing :focus-visible { outline-color: #bfeadb; }
+.patient-shell .btn, .patient-shell .btn-ghost, .pair-screen .btn, .pair-screen .btn-ghost, .modal .btn, .modal .btn-ghost,
+.contact-page .btn, .contact-page .btn-ghost, .join-card .btn, .join-card .btn-ghost { min-height: 48px; }
+input, select, textarea { transition: border-color var(--dur-1) var(--ease); }
+input:hover:not(:disabled), textarea:hover:not(:disabled), select:hover:not(:disabled) { border-color: #cfc3ad; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
 .loading { display: grid; place-items: center; height: 100%; font-size: 1.5rem; color: var(--ink-3); }
 
 /* ---------- landing ---------- */
@@ -59,19 +91,25 @@ a { color: var(--brand); }
 .chip-warn { background: var(--warn-soft); color: var(--warn); }
 .chip-bad { background: var(--bad-soft); color: var(--bad); }
 .chip-info { background: var(--info-soft); color: var(--info); }
-.chip-accent { background: #f6e1d6; color: var(--accent); }
+.chip-accent { background: var(--accent-soft); color: #6b4a00; }
 .chip-muted { background: var(--muted-soft); color: var(--ink-3); }
-.btn, .btn-ghost, .btn-sm { border-radius: 10px; padding: 9px 16px; font-weight: 700; font-size: 0.95rem; border: 1px solid transparent; }
+.btn, .btn-ghost, .btn-sm { border-radius: var(--r-sm); padding: 9px 18px; min-height: 42px; font-weight: 700; font-size: 0.98rem; border: 1px solid transparent; transition: background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
 .btn { background: var(--brand); color: var(--brand-ink); }
-.btn:hover:not(:disabled) { filter: brightness(1.1); }
+.btn:hover:not(:disabled) { background: var(--brand-strong); }
 .btn-ghost { background: transparent; border-color: var(--line); color: var(--ink); }
-.btn-ghost:hover { background: var(--paper-2); }
-.btn-sm { padding: 6px 10px; font-size: 0.85rem; background: var(--card); border-color: var(--line); color: var(--ink); }
-.btn-link { background: none; border: none; color: var(--brand); font-weight: 700; padding: 0 4px; text-decoration: underline; }
+.btn-ghost:hover:not(:disabled) { background: var(--paper-2); border-color: #cfc3ad; }
+.btn-sm { padding: 6px 12px; min-height: 36px; font-size: 0.9rem; background: var(--card); border-color: var(--line); color: var(--ink); }
+.btn-sm:hover:not(:disabled) { background: var(--paper-2); }
+.btn:active:not(:disabled), .btn-ghost:active:not(:disabled), .btn-sm:active:not(:disabled) { transform: translateY(1px) scale(0.985); }
+.btn-link { background: none; border: none; color: var(--brand); font-weight: 700; padding: 0 4px; text-decoration: underline; text-underline-offset: 3px; }
+.btn-link:hover { color: var(--brand-strong); }
 .danger { color: var(--bad) !important; }
-.btn-big { font-size: 1.6rem; font-weight: 700; padding: 20px 36px; border-radius: 20px; border: none; min-width: 200px; }
+.btn-big { font-size: 1.6rem; font-weight: 700; padding: 20px 36px; min-height: 64px; border-radius: var(--radius); border: none; min-width: 200px; transition: background-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
+.btn-big:active:not(:disabled) { transform: scale(0.985); }
 .btn-primary { background: var(--brand); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--brand-strong); }
 .btn-calm { background: var(--paper-2); color: var(--ink); border: 2px solid var(--line); }
+.btn-calm:hover:not(:disabled) { background: #e3dbca; }
 
 /* ---------- patient home ---------- */
 .patient-shell { min-height: 100%; padding: 32px clamp(16px, 4vw, 48px) 120px; max-width: 1280px; margin: 0 auto; }
@@ -80,7 +118,7 @@ a { color: var(--brand); }
 .today { font-size: 1.4rem; color: var(--ink-2); margin-top: 4px; }
 .mic-btn { display: flex; align-items: center; gap: 16px; padding: 18px 28px; font-size: 1.4rem; font-weight: 700; border-radius: 999px; border: none; background: var(--brand); color: #fff; box-shadow: var(--shadow); }
 .mic-btn.listening { background: var(--accent); animation: pulse 1.2s infinite; }
-@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(181, 83, 44, 0.45); } 50% { box-shadow: 0 0 0 18px rgba(181, 83, 44, 0); } }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(233, 185, 73, 0.55); } 50% { box-shadow: 0 0 0 16px rgba(233, 185, 73, 0); } }
 .patient-notice { background: var(--warn-soft); color: var(--ink); font-size: 1.4rem; padding: 18px 24px; border-radius: var(--radius); margin-bottom: 24px; }
 .contact-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 24px; }
 .contact-tile { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 16px 24px; background: var(--card); border: 3px solid transparent; border-radius: 28px; box-shadow: var(--shadow); transition: transform 0.12s, border-color 0.12s; }

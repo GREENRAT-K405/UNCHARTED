@@ -36,7 +36,7 @@
 .small-fresh { background: var(--good); color: #fff; border-radius: 50%; width: 26px; height: 26px; display: grid; place-items: center; font-size: 0.9rem; padding: 0; }
 
 .recall-card { position: absolute; left: 16px; top: 16px; z-index: 6; max-width: min(420px, 60%); display: flex; gap: 12px; align-items: flex-start; background: #fff4d6; color: #2a2100; padding: 14px 18px; border-radius: 18px; font-size: clamp(1.15rem, 2.2vw, 1.4rem); line-height: 1.35; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); animation: whoin 0.35s ease-out; }
-.recall-card svg { flex: none; color: var(--accent); margin-top: 2px; }
+.recall-card svg { flex: none; color: #a56f00; margin-top: 2px; }
 @media (prefers-color-scheme: dark) { .recall-card { background: #2d2614; color: #fff4d6; } }
 
 /* ---------- the patient's "About them" panel: calm, large, never read aloud ---------- */
