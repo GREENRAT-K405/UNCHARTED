@@ -22,6 +22,29 @@
 
 ---
 
+## Table of contents
+
+1. [Agentic Memory: the core of the system](#1-agentic-memory-the-core-of-the-system)
+   * [What a single call does to the memory](#what-a-single-call-does-to-the-memory)
+2. [MongoDB: system of record, vector store, event bus and analytics engine](#2-mongodb-is-the-system-of-record-the-vector-store-the-event-bus-and-the-analytics-engine)
+   * [Collections](#collections)
+3. [Product: three roles, one shared memory](#3-product-three-roles-one-shared-memory)
+   * [The call screen](#the-call-screen)
+4. [Face recognition: the identity layer](#4-face-recognition-the-identity-layer)
+5. [System architecture](#5-system-architecture)
+   * [Write path](#write-path-appagentpipelinepy) · [Read path](#read-path-appagentbriefpy) · [Repeat-call guard](#memory-changes-actions-appagentguardpy)
+   * [Real-time communication](#real-time-communication) · [Authentication and authorisation](#authentication-and-authorisation)
+6. [Technology stack](#6-technology-stack)
+   * [Graceful degradation](#graceful-degradation)
+7. [Use cases](#7-use-cases)
+8. [Repository layout](#8-repository-layout)
+9. [Getting started](#9-getting-started)
+   * [Environment](#environment) · [Verify](#verify) · [Deploy (Render, one service)](#deploy-render-one-service)
+10. [Five-minute demonstration](#10-five-minute-demonstration)
+11. [Ethics, privacy and safety](#11-ethics-privacy-and-safety)
+
+---
+
 ## 1. Agentic Memory: the core of the system
 
 Pehchaan is built on one thesis: **for a patient with Alzheimer's disease, an assistant is only useful if its memory is
