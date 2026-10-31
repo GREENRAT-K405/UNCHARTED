@@ -6,6 +6,10 @@
 
 **MongoDB Student Hackathon · SVNIT · Track 1: Agentic Memory**
 
+**Team WINTER_ARC:** [Param Kanada](https://github.com/GREENRAT-K405) · [Pratham Patadiya](https://github.com/Pratham722007) · [Ansh Gupta](https://github.com/AnshGupta06)
+
+*Made with care and love.*
+
 ![MongoDB Atlas](https://img.shields.io/badge/MongoDB-Atlas%20Vector%20Search-47A248?logo=mongodb&logoColor=white)
 ![Change Streams](https://img.shields.io/badge/MongoDB-Change%20Streams-47A248?logo=mongodb&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
