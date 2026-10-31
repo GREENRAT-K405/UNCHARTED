@@ -2,7 +2,10 @@
 
 Identity:
   - Caregivers sign in with Google or email/password through Firebase Auth.
-  - A patient's tablet signs in *anonymously* and is then paired to the patient by a
+  - A patient can sign in with their own Google or email account on the patient screen.
+    The account is the patient record's `firebase_uid`: either the patient creates their
+    own profile, or links to the one family made using a sign-in code from the dashboard.
+  - Or the patient's tablet signs in *anonymously* and is paired to the patient by a
     caregiver entering the 6-digit code the tablet shows. The patient never types a
     password and is never logged out; caregivers can unpair the device remotely.
   - Family members who join a call use a per-call join token, not an account.
@@ -39,7 +42,7 @@ PRINCIPAL_TTL = 30.0
 @dataclass
 class Principal:
     uid: str
-    kind: str  # caregiver | device | unpaired_device
+    kind: str  # caregiver | patient | device | unpaired_device
     provider: str
     email: str | None = None
     name: str | None = None
@@ -47,12 +50,20 @@ class Principal:
     user: dict | None = None
     device: dict | None = None
     roles: dict[ObjectId, str] = field(default_factory=dict)
+    # Contacts (relatives) this account is linked to, across patients. A relative's account is the same
+    # kind of account as a caregiver's: a family member can be both (Rahul is an owner and the contact "Rahul").
+    contacts: list[dict] = field(default_factory=list)
 
     @property
     def display(self) -> str:
         if self.kind == "device":
             return f"device:{self.device.get('label', 'tablet')}" if self.device else "device"
         return self.name or self.email or "caregiver"
+
+    @property
+    def is_patient(self) -> bool:
+        """The patient themselves: their own account or their paired tablet."""
+        return self.kind in ("patient", "device")
 
     @property
     def patient_ids(self) -> list[ObjectId]:
@@ -129,6 +140,14 @@ async def resolve(claims: dict) -> Principal:
                           roles={device["patient_id"]: "device"})
         else:
             p = Principal(uid=uid, kind="unpaired_device", provider=provider)
+    elif (patient := await db.users.find_one({"firebase_uid": uid, "role": "patient"})) is not None:
+        # The patient's own account: same access as their paired tablet. Their name stays the one
+        # the family chose ("Aaji"), not the account's display name.
+        await db.users.update_one({"_id": patient["_id"]}, {"$set": {
+            "email": claims.get("email"), "provider": provider, "last_seen": clock.now()}})
+        p = Principal(uid=uid, kind="patient", provider=provider, email=claims.get("email"),
+                      name=patient.get("name"), picture=claims.get("picture"), user=patient,
+                      roles={patient["_id"]: "device"})
     else:
         user = await db.users.find_one_and_update(
             {"firebase_uid": uid},
@@ -137,8 +156,9 @@ async def resolve(claims: dict) -> Principal:
              "$setOnInsert": {"role": "caregiver", "created_at": clock.now()}},
             upsert=True, return_document=True)
         roles = {m["patient_id"]: m["role"] async for m in db.memberships.find({"user_id": user["_id"]})}
+        linked = [c async for c in db.contacts.find({"user_id": user["_id"], "status": "active"})]
         p = Principal(uid=uid, kind="caregiver", provider=provider, email=claims.get("email"),
-                      name=user.get("name"), picture=claims.get("picture"), user=user, roles=roles)
+                      name=user.get("name"), picture=claims.get("picture"), user=user, roles=roles, contacts=linked)
     _principal_cache[uid] = (time.time() + PRINCIPAL_TTL, p)
     return p
 

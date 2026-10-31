@@ -1,0 +1,128 @@
+/* ---------- call layout: stage + controls, and the relative's side panel ---------- */
+.call { flex-direction: row; }
+.call-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Everything at the bottom edge of the video stacks here, so the caller's face stays clear. */
+.dock { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 6; pointer-events: none; }
+.dock > * { pointer-events: auto; }
+.dock .captions { position: static; transform: none; width: min(900px, 100%); pointer-events: none; }
+
+/* ---------- the "Who is this?" card (patient) ----------
+   Solid backgrounds, not translucent: readable over any video. */
+.who-card {
+  --wc-bg: #fffaf2; --wc-ink: #15120d; --wc-sub: #3d362c; --wc-accent: #1f5c4f; --wc-line: #e4d9c8;
+  width: min(880px, 100%); max-height: 46vh; overflow: auto; display: flex; gap: 22px; align-items: center;
+  background: var(--wc-bg); color: var(--wc-ink); border: 2px solid var(--wc-line); border-radius: 26px;
+  padding: 20px 26px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45); animation: whoin 0.35s ease-out; cursor: pointer;
+}
+@media (prefers-color-scheme: dark) {
+  .who-card { --wc-bg: #16130f; --wc-ink: #fff8ec; --wc-sub: #e3d8c6; --wc-accent: #7fd0b8; --wc-line: #3b342b; }
+}
+@keyframes whoin { from { opacity: 0; transform: translateY(16px); } }
+.who-card .avatar { border: 3px solid var(--wc-accent); }
+.who-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.who-name { font-size: clamp(2.2rem, 5vw, 3.4rem); font-weight: 700; line-height: 1.05; letter-spacing: -0.01em; }
+.who-rel { font-size: clamp(1.4rem, 3vw, 2rem); color: var(--wc-sub); font-weight: 700; }
+.who-memory { font-size: clamp(1.35rem, 2.8vw, 1.85rem); line-height: 1.35; margin-top: 6px; padding-top: 10px; border-top: 2px solid var(--wc-line); }
+.who-also { font-size: clamp(1.2rem, 2.4vw, 1.6rem); color: var(--wc-sub); }
+.who-fresh { align-self: flex-start; background: var(--good-soft); color: var(--good); font-weight: 700; font-size: 1rem; padding: 4px 12px; border-radius: 999px; animation: fadein 0.4s; }
+
+/* Collapsed: a small, persistent name tag at the bottom edge of the video. */
+.who-tag { display: inline-flex; align-items: center; gap: 12px; background: rgba(12, 10, 8, 0.9); color: #fff; padding: 8px 20px 8px 8px; border-radius: 999px; border: 2px solid rgba(255, 255, 255, 0.25); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); animation: fadein 0.3s; }
+.who-tag-text { display: flex; flex-direction: column; line-height: 1.15; }
+.who-tag-text b { font-size: clamp(1.4rem, 2.6vw, 1.9rem); }
+.who-tag-text span { font-size: clamp(1.05rem, 1.8vw, 1.25rem); color: #efe6d6; }
+.small-fresh { background: var(--good); color: #fff; border-radius: 50%; width: 26px; height: 26px; display: grid; place-items: center; font-size: 0.9rem; padding: 0; }
+
+.recall-card { position: absolute; left: 16px; top: 16px; z-index: 6; max-width: min(420px, 60%); display: flex; gap: 12px; align-items: flex-start; background: #fff4d6; color: #2a2100; padding: 14px 18px; border-radius: 18px; font-size: clamp(1.15rem, 2.2vw, 1.4rem); line-height: 1.35; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); animation: whoin 0.35s ease-out; }
+.recall-card svg { flex: none; color: var(--accent); margin-top: 2px; }
+@media (prefers-color-scheme: dark) { .recall-card { background: #2d2614; color: #fff4d6; } }
+
+/* ---------- the relative's panel ---------- */
+.rel-panel { width: 340px; flex: none; background: var(--paper); color: var(--ink); overflow: auto; padding: 16px 18px 24px; display: flex; flex-direction: column; gap: 16px; border-left: 1px solid #3a342c; }
+.rel-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; }
+.rel-panel section { display: flex; flex-direction: column; gap: 6px; }
+.rel-panel ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.rel-panel p { margin: 0; line-height: 1.45; }
+.rel-title { font-weight: 700; color: var(--brand); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.rel-onscreen { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; line-height: 1.4; }
+.rel-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rel-chips .chip button { background: none; border: none; color: inherit; font-weight: 700; padding: 0 0 0 2px; }
+.rel-pick { display: flex; flex-direction: column; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; max-height: 220px; overflow: auto; }
+.rel-fine { font-size: 0.82rem; color: var(--ink-3); }
+.rel-hints { background: var(--warn-soft); border-radius: 12px; padding: 10px 12px; }
+.rel-known { list-style: none; padding: 0 !important; }
+.rel-known li { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+@media (max-width: 900px) {
+  .call.with-panel { flex-direction: column; }
+  .rel-panel { width: 100%; max-height: 40vh; border-left: none; border-top: 1px solid #3a342c; }
+}
+
+/* ---------- contact link: waiting room and ringing ---------- */
+.contact-page { min-height: 100%; display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 16px 48px; }
+.contact-page h2 { margin: 0; font-size: 1.3rem; }
+.cl-status { display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--ink-2); margin: 0; }
+.cl-missed { background: var(--warn-soft); border-radius: 12px; padding: 10px 14px; margin: 0; }
+.cl-update { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; font-size: 1.05rem; resize: vertical; }
+.cl-calls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.cl-calls li { display: flex; flex-direction: column; gap: 2px; padding-bottom: 10px; border-bottom: 1px solid var(--paper-2); }
+.contact-page .auth-notice ul { margin: 6px 0 0; padding-left: 20px; }
+.ringing { position: fixed; inset: 0; background: radial-gradient(circle at 50% 35%, #24493f, #10221d); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px 16px; text-align: center; }
+.ringing h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); }
+.ringing p { margin: 0; color: #cfe3db; font-size: 1.1rem; }
+.ring-avatar { border-radius: 50%; animation: ringpulse 1.6s infinite; }
+@keyframes ringpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(127, 208, 184, 0.55); } 50% { box-shadow: 0 0 0 26px rgba(127, 208, 184, 0); } }
+.ring-actions { display: flex; gap: 28px; margin-top: 12px; flex-wrap: wrap; justify-content: center; }
+.ring-btn { border: none; color: #fff; font-size: 1.4rem; font-weight: 700; padding: 18px 40px; border-radius: 999px; min-width: 160px; }
+.ring-btn.accept { background: #2f9a5f; }
+.ring-btn.decline { background: #b23a3a; }
+
+/* ---------- patient home: recap line, family menu, someone-else screen ---------- */
+.tile-recap { font-size: 1.2rem; line-height: 1.35; color: var(--ink-2); text-align: center; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--paper-2); max-width: 100%; }
+.family-corner { position: fixed; left: 14px; bottom: 14px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper-2); color: var(--ink-3); display: grid; place-items: center; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; z-index: 20; }
+.family-corner > svg:first-child { grid-area: 1 / 1; }
+.hold-ring { grid-area: 1 / 1; width: 44px; height: 44px; transform: rotate(-90deg); }
+.hold-ring circle { fill: none; stroke: var(--brand); stroke-width: 3; stroke-dasharray: 113.1; stroke-dashoffset: 113.1; }
+.family-corner.holding .hold-ring circle { transition: stroke-dashoffset 3s linear; stroke-dashoffset: 0; }
+.family-menu { max-width: 520px; display: flex; flex-direction: column; gap: 12px; }
+.family-menu h2 { margin: 0; }
+.family-menu-actions { display: flex; flex-direction: column; gap: 10px; }
+.elsewhere-grid { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+.contact-tile.small { padding: 18px 14px; min-width: 160px; }
+.contact-tile.small .tile-name { font-size: 1.6rem; }
+.contact-tile.small .tile-rel { font-size: 1.1rem; }
+
+/* ---------- patient sign-in: family setup first ---------- */
+.ps-secondary { padding: 18px 24px; }
+.ps-secondary .ps-link { font-size: 1.15rem; }
+
+/* ---------- caregiver: contacts and calls ---------- */
+.cc-link { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.archive-modal { max-width: 760px; display: flex; flex-direction: column; gap: 14px; }
+.archive-modal h2 { margin: 0; }
+.archive-choice { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; }
+.archive-choice > div { display: flex; flex-direction: column; gap: 8px; background: var(--paper); border-radius: 14px; padding: 14px 16px; }
+.archive-choice textarea { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; margin-top: 4px; }
+.archived-row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--paper-2); }
+.archived-row textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.overlay-log { background: var(--paper); border-radius: 12px; padding: 10px 14px; margin: 10px 0; }
+.overlay-log p { margin: 4px 0; }
+@media (max-width: 760px) { .archive-choice { grid-template-columns: 1fr; } }
+.cc-remove { margin-left: auto; }
+.archive-label { display: flex; flex-direction: column; gap: 4px; font-weight: 700; font-size: 0.95rem; }
+
+/* "Join the family call": the one big button on the patient's home screen */
+.join-family { display: flex; align-items: center; justify-content: center; gap: 22px; width: 100%; margin: 0 0 28px; padding: 28px 24px; border: none; border-radius: 28px; background: var(--brand); color: #fff; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; box-shadow: var(--shadow); }
+.join-family:hover:not(:disabled), .join-family:focus-visible { filter: brightness(1.1); outline: 4px solid rgba(31, 92, 79, 0.3); }
+.join-family:active { transform: scale(0.99); }
+
+/* relatives' own page (/family) and the "keep this link" card */
+.family-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.family-who { display: flex; align-items: center; gap: 16px; }
+.family-who h1 { margin: 0; }
+.family-pick { display: flex; gap: 8px; flex-wrap: wrap; flex-direction: row; }
+.keep-link { gap: 8px; }
+.keep-link p { margin: 0; }
+.link-input { font-size: 1rem; padding: 10px 12px; }
+.family-avatar { background: #1f5c4f; color: #fff; }

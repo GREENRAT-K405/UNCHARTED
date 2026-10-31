@@ -7,7 +7,9 @@ the clock pinned to each historical moment via clock.frozen().
 Riya is kept "demo-safe": her caregiver notes (lives in Mumbai, dog Bruno) are untouched
 and her last call was days ago, so the live demo script in the README still works.
 """
+import asyncio
 import random
+import secrets
 from datetime import date, datetime, time, timedelta
 
 from bson import ObjectId
@@ -50,10 +52,10 @@ CONTACTS = [
     {"key": "arjun", "name": "Arjun", "nicknames": ["my grandson"], "relation": "grandson", "detail": "Rahul's son",
      "color": "#2b5d8a", "phone": "+91 98200 00004", "freq": 1.3, "hours": [17, 18],
      "notes": ["Arjun is in 8th standard", "Arjun plays football for his school team"]},
-    {"key": "anil", "name": "Anil", "nicknames": ["Anil bhau", "my brother"], "relation": "younger brother",
+    {"key": "anil", "name": "Anil", "known_as": "Anil bhau", "nicknames": ["Anil bhau", "my brother"], "relation": "younger brother",
      "detail": "lives in Kolhapur", "color": "#8a5a2b", "phone": "+91 98200 00006", "freq": 1, "hours": [10, 11],
      "weekday": 6, "notes": ["Anil lives in Kolhapur"]},
-    {"key": "lata", "name": "Lata", "nicknames": ["Lata tai", "my friend"], "relation": "friend",
+    {"key": "lata", "name": "Lata", "known_as": "Lata tai", "nicknames": ["Lata tai", "my friend"], "relation": "friend",
      "detail": "neighbour, bhajan group", "color": "#a0405a", "phone": "+91 98200 00007", "freq": 2.5, "hours": [10, 11, 12],
      "notes": ["Lata is Aaji's friend from the bhajan group and lives next door"]},
     {"key": "kavya", "name": "Kavya", "nicknames": ["chimni", "little Kavya"], "relation": "granddaughter",
@@ -167,6 +169,18 @@ GLOBAL_MEMORIES = [
 
 PENDING_CONTACT = {"name": "Ramesh", "days_ago": 1}
 
+# Aaji's late husband: archived, so his tile is hidden, calls are refused gently, his memories are
+# caregiver_only, and the family's note on how to answer reaches relatives' screens.
+ARCHIVED = {
+    "name": "Madhav", "nicknames": ["Baba", "my husband", "Aho"], "relation": "husband",
+    "detail": "passed away in March 2021", "color": "#6b5a49",
+    "note": "Madhav (Baba) passed away in March 2021. If Aaji asks for him, don't correct her or break the news "
+            "again. Say \"Tell me about him\" and let her talk about the abhangs he sang every morning, then gently "
+            "move on to today.",
+    "memories": ["Madhav sang abhangs every morning before breakfast", "Madhav and Aaji were married for 48 years"],
+    "asked_days_ago": [9, 3],  # Aaji asked by voice to call him; the guard refused gently
+}
+
 
 def _local(day: date, hour: int, minute: int) -> datetime:
     return datetime.combine(day, time(hour, minute), tzinfo=TZ)
@@ -179,7 +193,7 @@ def _label(d: date) -> str:
 async def _wipe(patient_id: ObjectId):
     call_ids = [c["_id"] async for c in db.calls.find({"patient_id": patient_id}, {"_id": 1})]
     await db.transcript_chunks.delete_many({"call_id": {"$in": call_ids}})
-    for coll in (db.calls, db.contacts, db.devices, db.auth_events):
+    for coll in (db.calls, db.contacts, db.devices, db.auth_events, db.contact_updates):
         await coll.delete_many({"patient_id": patient_id})
     for coll in (db.memories, db.briefs, db.memory_events):
         await coll.delete_many({"owner_id": patient_id})
@@ -188,7 +202,17 @@ async def _wipe(patient_id: ObjectId):
     await db.users.delete_many({"_id": {"$in": seeded}})
 
 
+_seed_lock = asyncio.Lock()
+
+
 async def seed_demo() -> dict:
+    """Serialised: two overlapping runs (a double-clicked Reset demo, or a reset during the startup seed)
+    would each insert a full set of contacts and leave every person on the patient's screen twice."""
+    async with _seed_lock:
+        return await _seed_demo()
+
+
+async def _seed_demo() -> dict:
     rng = random.Random(42)
     now = clock.now()
     today = now.astimezone(TZ).date()
@@ -196,6 +220,9 @@ async def seed_demo() -> dict:
     setup_at = _local(start, 9, 30)
 
     patient = await db.users.find_one({"role": "patient", "demo": True})
+    # Contact links survive a demo reset, so a link already open on a relative's phone keeps working.
+    old_tokens = {c["name"]: c["link_token"] async for c in db.contacts.find(
+        {"patient_id": patient["_id"], "link_token": {"$exists": True}})} if patient else {}
     fields = {"name": "Aaji", "full_name": "Sunanda Patil", "role": "patient", "demo": True, "language": "en-IN",
               "age": 74, "city": "Pune", "created_at": setup_at}
     if patient:
@@ -214,6 +241,8 @@ async def seed_demo() -> dict:
     for _, _, _, content, _, opts in BEATS:
         texts.add(_fill(content, opts, today))
     texts.update(t for _, t, _ in GLOBAL_MEMORIES)
+    texts.update(ARCHIVED["memories"])
+    texts.add(f"{ARCHIVED['name']} was Aaji's {ARCHIVED['relation']}")
     rel_texts = {c["key"]: f"{c['name']} is Aaji's {c['relation']}" + (f" ({c['detail']})" if c.get("detail") else "")
                  for c in CONTACTS}
     texts.update(rel_texts.values())
@@ -246,9 +275,10 @@ async def seed_demo() -> dict:
         by_content: dict[str, dict] = {}
         caregiver_src = {"kind": "caregiver", "origin": "caregiver", "by": "Rahul Patil"}
         for order, c in enumerate(CONTACTS):
-            doc = {"patient_id": pid, "name": c["name"], "nicknames": c["nicknames"], "relation": c["relation"],
-                   "relation_detail": c.get("detail"), "phone": c["phone"], "photo": None, "color": c["color"],
-                   "status": "active", "primary_caregiver": c.get("primary", False),
+            doc = {"patient_id": pid, "name": c["name"], "known_as": c.get("known_as"), "nicknames": c["nicknames"],
+                   "relation": c["relation"], "relation_detail": c.get("detail"), "phone": c["phone"], "photo": None,
+                   "color": c["color"], "status": "active", "primary_caregiver": c.get("primary", False),
+                   "link_token": old_tokens.get(c["name"]) or secrets.token_urlsafe(12),
                    "created_at": setup_at + timedelta(seconds=order), "added_by": "Rahul Patil"}
             doc["_id"] = (await db.contacts.insert_one(doc)).inserted_id
             contacts[c["key"]] = doc
@@ -265,6 +295,19 @@ async def seed_demo() -> dict:
                 await ms.insert_memory(owner_id=pid, contact_id=doc["_id"], type="constraint", content=text,
                                        source=caregiver_src, trust=1.0, importance=1.0, visibility="caregiver_only",
                                        rule=rule, actor="Rahul Patil", embedding=vectors[text])
+        a = ARCHIVED
+        late = {"patient_id": pid, "name": a["name"], "known_as": None, "nicknames": a["nicknames"],
+                "relation": a["relation"], "relation_detail": a["detail"], "phone": None, "photo": None,
+                "color": a["color"], "status": "archived", "primary_caregiver": False,
+                "archive_note": a["note"], "archived_at": setup_at, "archived_by": "Rahul Patil",
+                "created_at": setup_at + timedelta(seconds=len(CONTACTS)), "added_by": "Rahul Patil"}
+        late["_id"] = (await db.contacts.insert_one(late)).inserted_id
+        rel_text = f"{a['name']} was Aaji's {a['relation']}"
+        for mtype, text in [("relationship", rel_text)] + [("fact", t) for t in a["memories"]]:
+            await ms.insert_memory(owner_id=pid, contact_id=late["_id"], type=mtype, content=text, source=caregiver_src,
+                                   trust=1.0, importance=1.0 if mtype == "relationship" else 0.6,
+                                   visibility="caregiver_only", actor="Rahul Patil", embedding=vectors[text])
+        await db.memories.update_many({"contact_id": late["_id"]}, {"$set": {"visibility_before_archive": "patient"}})
         for mtype, text, vis in GLOBAL_MEMORIES:
             await ms.insert_memory(owner_id=pid, contact_id=None, type=mtype, content=text, source=caregiver_src,
                                    trust=1.0, importance=1.0 if mtype == "sensitive" else 0.6, visibility=vis,
@@ -392,6 +435,32 @@ async def seed_demo() -> dict:
             "initiated_by": "patient", "seeded": True,
             "guard": {"allowed": False, "can_override": key != "rahul", "reason": reason,
                       "message": f"You spoke to {c['name']} a little while ago."}})
+
+    for days_ago in ARCHIVED["asked_days_ago"]:
+        await db.calls.insert_one({
+            "patient_id": pid, "contact_id": late["_id"], "status": "blocked", "seeded": True, "initiated_by": "patient",
+            "started_at": _local(today - timedelta(days=days_ago), 19, rng.randint(0, 59)),
+            "guard": {"allowed": False, "can_override": False, "archived": True,
+                      "reason": "Archived contact: calls are not placed", "message": "Let's call someone else today."}})
+
+    # ---- the "Who is this?" overlay: Aaji asked who Arjun was more than once on two recent calls
+    asks = {"arjun": [(2, 1), (1, 1)], "kavya": [(0, 1)]}  # per recent call: (button, voice)
+    for key, per_call in asks.items():
+        recent = [c async for c in db.calls.find({"contact_id": contacts[key]["_id"], "status": "processed"})
+                  .sort("started_at", -1).limit(len(per_call))]
+        for call, (button, voice) in zip(recent, per_call):
+            t0 = call.get("answered_at") or call["started_at"]
+            events = [{"kind": "shown", "ts": t0 + timedelta(seconds=3)}] + \
+                [{"kind": "button", "ts": t0 + timedelta(seconds=60 * (i + 1))} for i in range(button)] + \
+                [{"kind": "voice", "ts": t0 + timedelta(seconds=90 * (i + 1))} for i in range(voice)]
+            await db.calls.update_one({"_id": call["_id"]}, {"$set": {"overlay": {
+                "shown": 1, "button": button, "voice": voice, "also_here_changes": 0,
+                "events": sorted(events, key=lambda e: e["ts"])}}})
+            if button + voice >= 2:
+                rel = await db.memories.find_one({"contact_id": contacts[key]["_id"], "type": "relationship"})
+                with clock.frozen(call["ended_at"]):
+                    await ms.set_fields(rel, {"identity_asks": rel.get("identity_asks", 0) + 1,
+                                              "last_identity_ask_at": clock.now()}, "identity_asked", "patient")
 
     # ---- recent caregiver activity, so the family activity log looks lived-in
     async def touch(content, days_ago, fn):

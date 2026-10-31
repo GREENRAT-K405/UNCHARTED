@@ -44,6 +44,18 @@ class Settings(BaseSettings):
     # Repeat-call guard default, used when no caregiver constraint is set.
     default_min_gap_minutes: int = 30
 
+    # Calls: how long a call rings before it is recorded as unanswered, and how long the brief may
+    # wait for the LLM before the template brief is used (the patient never waits on a spinner).
+    ring_timeout_seconds: int = 30
+    brief_llm_timeout: float = 10.0
+    # A family call is an open meeting: it waits this long for a relative to join before it is closed.
+    family_wait_seconds: int = 900
+
+    # Live recall cards: vectorSearchScore needed to show a memory mid-call (cosine mapped to 0..1).
+    recall_threshold: float = 0.74  # Voyage: related speech scored 0.75-0.83, unrelated memories 0.66-0.70
+    recall_threshold_local: float = 0.66  # local hashed embedding (keyword-like)
+    recall_tick_seconds: float = 10.0
+
     # Raw transcript retention (privacy by design).
     transcript_ttl_seconds: int = 30 * 24 * 3600
 

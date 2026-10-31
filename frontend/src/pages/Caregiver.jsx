@@ -33,8 +33,24 @@ export default function Caregiver() {
   if (user === undefined || (user && !me && !error)) return <div className="cg loading">Signing you in…</div>;
   if (!user || user.anonymous) return <Navigate to="/login?next=/caregiver" replace />;
   if (error) return <div className="cg loading">Couldn't reach the server: {error}</div>;
+  if (me.kind === "patient") return <PatientAccountNotice me={me} />;
+  // A relative's account has no care circle: their page is /family, not the dashboard's onboarding.
+  if (me.circles.length === 0 && me.relative?.length) return <Navigate to="/family" replace />;
   if (me.circles.length === 0) return <Onboarding />;
   return <Dashboard />;
+}
+
+function PatientAccountNotice({ me }) {
+  const { signOut } = useCaregiverAuth();
+  return (
+    <div className="cg loading patient-account-notice">
+      <p><b>{me.email || me.name}</b> is {me.name}'s own patient account, not a family account.</p>
+      <div className="row">
+        <Link className="btn" to="/patient">Open {me.name}'s screen</Link>
+        <button className="btn-ghost" onClick={signOut}>Sign in with a family account</button>
+      </div>
+    </div>
+  );
 }
 
 function Dashboard() {
@@ -50,6 +66,7 @@ function Dashboard() {
 
   const [tab, setTab] = useState(() => store.get("cg-tab", "overview"));
   const [health, setHealth] = useState(null);
+  const [speech, setSpeech] = useState(null);
   const [wsState, setWsState] = useState("closed");
   const [feed, setFeed] = useState([]); // change-stream events
   const [liveTranscript, setLiveTranscript] = useState([]);
@@ -84,13 +101,17 @@ function Dashboard() {
         bump();
       } else if (msg.type === "transcript") {
         setLiveTranscript((t) => [...t.slice(-40), msg]);
-      } else if (msg.type === "contact_request") {
+      } else if (msg.type === "contact_request" || msg.type === "contact_update") {
         setFeed((f) => [{ ...msg, at: Date.now() }, ...f]);
         bump();
       }
     }, setWsState, async () => ({ type: "auth", token: await auth.identity.getToken() }));
     return () => s.close();
   }, [patient.id]);
+
+  useEffect(() => {
+    api.get(`/patients/${patient.id}/speech-status`).then(setSpeech).catch(() => {});
+  }, [patient.id, tick]);
 
   useEffect(() => {
     api.get(`/patients/${patient.id}/contacts?status=all`).then(setContacts);
@@ -151,6 +172,13 @@ function Dashboard() {
               <div><span className={`dot ${health.llm.mode !== "offline" ? "ok" : "warn"}`} /> Agent: {health.llm.mode}</div>
               <div><span className={`dot ${health.embeddings === "voyage" ? "ok" : "warn"}`} /> Embeddings: {health.embeddings}</div>
               <div><span className={`dot ${health.auth === "firebase" ? "ok" : "warn"}`} /> Auth: {health.auth === "firebase" ? "Firebase" : "dev mode"}</div>
+              {speech && (
+                <div title={speech.status ? `Reported by ${speech.status.device}` : "The patient's screen hasn't reported yet"}>
+                  <span className={`dot ${!speech.status ? "" : speech.status.voice_found ? "ok" : "warn"}`} /> Voice ({speech.language}):{" "}
+                  {!speech.status || speech.status.language !== speech.language ? "not reported yet"
+                    : speech.status.voice_found ? "installed" : "none on the patient's device, using en-IN"}
+                </div>
+              )}
             </>
           )}
           <Link to="/patient" className="btn-link">Open patient screen ↗</Link>

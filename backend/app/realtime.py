@@ -21,9 +21,12 @@ class Hub:
     def __init__(self):
         self.rooms: dict[str, dict[str, WebSocket]] = defaultdict(dict)  # call_id -> role -> ws
         self.caregivers: dict[str, set[WebSocket]] = defaultdict(set)  # patient_id -> sockets
+        self.patients: dict[str, set[WebSocket]] = defaultdict(set)  # patient_id -> home screens
+        self.contacts: dict[str, set[WebSocket]] = defaultdict(set)  # contact_id -> open contact links (presence)
         self._brief_tasks: dict[str, asyncio.Task] = {}
         self._watchers: list[asyncio.Task] = []
-        self.refresh_brief = None  # set by main: async (call_id) -> card payload
+        self.refresh_brief = None  # set by main: async (call) -> {"patient": payload, "contact": payload}
+        self.on_claim = None  # set by main: async (call_id, contact) when a relative answers a family call
 
     # ---- sending -------------------------------------------------------
     async def _send(self, ws: WebSocket, msg: dict):
@@ -40,6 +43,15 @@ class Hub:
     async def to_caregivers(self, patient_id: str, msg: dict):
         for ws in list(self.caregivers.get(patient_id, set())):
             await self._send(ws, msg)
+
+    async def to_patient_home(self, patient_id: str, msg: dict):
+        for ws in list(self.patients.get(patient_id, set())):
+            await self._send(ws, msg)
+
+    async def to_contact(self, contact_id: str, msg: dict, exclude: WebSocket | None = None):
+        for ws in list(self.contacts.get(contact_id, set())):
+            if ws is not exclude:
+                await self._send(ws, msg)
 
     # ---- live brief refresh -------------------------------------------
     def schedule_brief_refresh(self, contact_id: str):
@@ -60,7 +72,9 @@ class Hub:
             return
         if self.refresh_brief:
             payload = await self.refresh_brief(call)
-            await self.to_room(call_id, {"type": "brief", "brief": payload, "reason": "memory updated"}, only="patient")
+            await self.to_room(call_id, {"type": "brief", "brief": payload["patient"], "reason": "memory updated"},
+                               only="patient")
+            await self.to_room(call_id, {"type": "relative_brief", "view": payload["contact"]}, only="contact")
 
     # ---- change streams -------------------------------------------------
     async def start(self):
@@ -126,23 +140,27 @@ class Hub:
                     async for change in stream:
                         doc = change.get("fullDocument")
                         if doc:
-                            doc.pop("join_token", None)
-                            await self.to_caregivers(str(doc["patient_id"]),
-                                                     {"type": "call", "op": change["operationType"],
-                                                      "call": ms.serialize(doc)})
+                            await self._on_call(doc, change["operationType"])
             except asyncio.CancelledError:
                 return
             except Exception as e:
                 log.warning("call change stream error, restarting: %s", e)
                 await asyncio.sleep(2)
 
+    async def _on_call(self, doc: dict, op: str):
+        doc.pop("join_token", None)
+        await self.to_caregivers(str(doc["patient_id"]), {"type": "call", "op": op, "call": ms.serialize(doc)})
+        if doc.get("status") == "processed":
+            # The home screen's "Talked yesterday · ..." line comes from the new recap.
+            await self.to_patient_home(str(doc["patient_id"]), {"type": "home_refresh", "reason": "call processed"})
+
     async def call_changed(self, call_id: ObjectId):
         """Used only when change streams are unavailable."""
         if db.capabilities["change_streams"]:
             return
-        doc = await db.calls.find_one({"_id": call_id}, {"join_token": 0})
+        doc = await db.calls.find_one({"_id": call_id})
         if doc:
-            await self.to_caregivers(str(doc["patient_id"]), {"type": "call", "op": "update", "call": ms.serialize(doc)})
+            await self._on_call(doc, "update")
 
 
 hub = Hub()

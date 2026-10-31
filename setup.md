@@ -66,7 +66,9 @@ copy .env.example .env
 | Variable | Required | Notes |
 |---|---|---|
 | `MONGODB_URI` | Only for Atlas | Default targets the Docker container |
-| `ANTHROPIC_API_KEY` | No | Without it the rule-based offline agent is used |
+| `GROQ_API_KEY` | No, but recommended | The default LLM for the memory agent and briefs. Without it (and without Claude) the rule-based offline agent is used |
+| `ANTHROPIC_API_KEY` | No | Only with `LLM_MODE=claude` |
+| `RING_TIMEOUT_SECONDS` | No | How long a call rings before it counts as unanswered (default 30) |
 | `VOYAGE_API_KEY` | No, but recommended | Without it a local hash embedding is used, so semantic recall is much weaker |
 | `VOYAGE_BASE_URL` | Only for Atlas-issued keys | `https://ai.mongodb.com/v1` if the key came from Atlas Model API Keys |
 | `FIREBASE_PROJECT_ID` | For real sign-in | e.g. `uncharted-d58fe`. Unset = local dev sign-in (no passwords checked). The backend needs only this id, never a service-account key |
@@ -119,10 +121,12 @@ npm run dev
 - Caregiver dashboard: http://localhost:5173/caregiver
 - Backend API docs: http://localhost:8000/docs
 
-Sign in on the caregiver dashboard and choose **Explore the demo family**. Then open the patient screen: it shows a
-6-digit number. Pair it under **Family & devices** (or with the one-click button when signed in on the same browser).
+Sign in on the caregiver dashboard and choose **Explore the demo family**. Then open the patient screen. Either sign
+in there with the patient's own account (create a sign-in code for Aaji under **Family & devices**, then type it in),
+or pair it with the 6-digit number it shows (or the one-click button when signed in on the same browser).
 
-For a two-person call, open the patient screen in one Chrome window and the contact's join link in a second window or Chrome profile. Use **Reset demo** on the dashboard to restore the seed data.
+For a two-person call, open the patient screen in one Chrome window and the contact's link (Contacts & rules → Copy
+link, then **I'm ready**) in a second window or Chrome profile. It rings when the patient taps that person. Use **Reset demo** on the dashboard to restore the seed data.
 
 ### Two laptops on the same Wi-Fi
 
@@ -132,12 +136,13 @@ joins the call with no camera or mic, and the call screen shows a red "not a sec
 On the host laptop only:
 
 1. Set `PUBLIC_BASE_URL=https://<host-ip>:5173` in `backend/.env` (find the IP with `hostname -I` on Linux or
-   `ipconfig` on Windows), then restart the backend so join links use that address.
+   `ipconfig` on Windows), then restart the backend so contact and join links use that address.
 2. Run the frontend with `npm run dev:https` instead of `npm run dev`.
 3. Open ports 5173 and 8000 in the firewall (Fedora: `sudo firewall-cmd --add-port=5173/tcp --add-port=8000/tcp`).
 
-The other laptop runs nothing. It opens the join link in Chrome, clicks **Advanced → Proceed** on the certificate
-warning (the certificate is self-signed), and allows camera and microphone.
+The other laptop runs nothing. It opens the contact's link (`/c/…`, copied from Contacts & rules) in Chrome, clicks
+**Advanced → Proceed** on the certificate warning (the certificate is self-signed), presses **I'm ready**, and allows
+camera and microphone when the call is accepted. The per-call join link still works too.
 
 ## 6. Verify
 

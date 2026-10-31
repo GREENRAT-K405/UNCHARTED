@@ -3,13 +3,14 @@
 Every candidate's score breakdown is saved on the brief so the Memory Inspector can
 show exactly why each memory was (or was not) selected.
 """
+import asyncio
 import json
 import math
 from datetime import timedelta
 
 from bson import ObjectId
 
-from .. import clock, db, embeddings, llm
+from .. import callcard, clock, db, embeddings, lang, llm
 from .. import memory_store as ms
 from ..config import settings
 from . import offline
@@ -19,6 +20,8 @@ W_SIM, W_REC, W_IMP, W_TRUST = 0.5, 0.2, 0.15, 0.15
 OPEN_LOOP_BOOST = 0.3
 OPEN_LOOP_DAYS = 3
 MAX_ITEMS = 6
+RECENT_DAYS = 21
+RECENT_TYPES = ("topic", "event", "plan", "preference")
 
 
 def _recency(doc, now) -> float:
@@ -64,6 +67,10 @@ async def build_brief(owner_id: ObjectId, contact: dict, call_id: ObjectId | Non
     # D. semantic: $vectorSearch with owner/contact/status/visibility pre-filters
     for d, score in await ms.search(owner_id, cid, qvec, limit=10, visibility="patient"):
         add(d, "semantic match", score)
+    # D2. recent conversation: the same search, also pre-filtered on the index's type and created_at fields
+    for d, score in await ms.search(owner_id, cid, qvec, limit=5, visibility="patient", types=RECENT_TYPES,
+                                    created_after=now - timedelta(days=RECENT_DAYS)):
+        add(d, "recent topic", score)
 
     # E. guardrails: never shown, used to keep the composer away from them
     guard_docs = [d async for d in db.memories.find({
@@ -98,6 +105,10 @@ async def build_brief(owner_id: ObjectId, contact: dict, call_id: ObjectId | Non
     for i in selected:
         i["selected"] = True
 
+    patient = await db.users.find_one({"_id": owner_id}, {"name": 1, "language": 1})
+    language = lang.normalise((patient or {}).get("language"))
+    # Repeated "who is this?" on recent calls: lead with clearer identity information.
+    identity_first = await callcard.identity_boosted(cid)
     card = None
     mode = "offline"
     view_items = [{"id": str(i["memory_id"]), "type": i["type"], "content": i["content"],
@@ -105,7 +116,10 @@ async def build_brief(owner_id: ObjectId, contact: dict, call_id: ObjectId | Non
     if compose:
         user = json.dumps({
             "today": now.astimezone(settings.tz).strftime("%A %Y-%m-%d"),
-            "contact": {"name": contact["name"], "relation": contact.get("relation"),
+            "patient_language": lang.name(language),
+            "identity_first": identity_first,
+            "contact": {"name": contact["name"], "known_as": callcard.known_as(contact),
+                        "relation": contact.get("relation"), "relation_detail": contact.get("relation_detail"),
                         "nicknames": contact.get("nicknames", [])},
             "memories": [{**v, "event_date": v["event_date"].astimezone(settings.tz).strftime("%A %Y-%m-%d")
                           if v["event_date"] else None} for v in view_items],
@@ -114,12 +128,17 @@ async def build_brief(owner_id: ObjectId, contact: dict, call_id: ObjectId | Non
                             "recap": c.get("recap", "")} for c in last_calls],
             "guardrails": [g["content"] for g in guard_docs if g["type"] == "sensitive"],
         }, indent=1)
-        card = await llm.structured(BRIEF_SYSTEM, user, BRIEF_SCHEMA, effort="low", max_tokens=4000)
+        try:
+            # A slow LLM must never hold up the call: after the timeout the template brief is used.
+            card = await asyncio.wait_for(llm.structured(BRIEF_SYSTEM, user, BRIEF_SCHEMA, effort="low", max_tokens=4000),
+                                          timeout=settings.brief_llm_timeout)
+        except asyncio.TimeoutError:
+            card = None
         if card is not None:
             mode = llm.status["mode"]
     if card is None:
-        patient = await db.users.find_one({"_id": owner_id}, {"name": 1})
-        card = offline.brief(contact, view_items, last_calls, now, patient["name"] if patient else "")
+        card = offline.brief(contact, view_items, last_calls, now, patient["name"] if patient else "",
+                             identity_first=identity_first)
 
     doc = {
         "owner_id": owner_id, "contact_id": cid, "call_id": call_id, "created_at": now, "mode": mode,
@@ -128,6 +147,9 @@ async def build_brief(owner_id: ObjectId, contact: dict, call_id: ObjectId | Non
                     "open_loop_boost": OPEN_LOOP_BOOST},
         "guardrail_ids": [g["_id"] for g in guard_docs],
         "last_call_ids": [c["_id"] for c in last_calls],
+        "language": language, "identity_first": identity_first,
+        # Shown only on the relative's side, never to the patient or the composer.
+        "relative_hints": await callcard.relative_hints(owner_id, cid),
     }
     res = await db.briefs.insert_one(doc)
     doc["_id"] = res.inserted_id
@@ -146,6 +168,7 @@ async def receiver_note(owner_id: ObjectId, contact: dict) -> list[str]:
     notes = []
     async for d in db.memories.find({
         "owner_id": owner_id, "contact_id": contact["_id"], "source.origin": "patient",
-        "status": {"$in": ["pending_review", "active"]}, "created_at": {"$gte": since}}).sort("created_at", -1).limit(4):
+        "status": {"$in": ["pending_review", "active"]}, "visibility": {"$ne": "never_surface"},
+        "type": {"$ne": "sensitive"}, "created_at": {"$gte": since}}).sort("created_at", -1).limit(4):
         notes.append(f"Recently believed: \"{d['content']}\"")
     return notes

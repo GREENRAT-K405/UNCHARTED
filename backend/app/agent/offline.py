@@ -47,7 +47,19 @@ def _cand(type_, content, speaker, about, quote, event_date=None, days=None, imp
     }
 
 
-def extract(lines: list[dict], contact: dict, patient_name: str, call_date: datetime) -> dict:
+def _third_person(sentence: str, name: str) -> str:
+    """'I got engaged!' -> 'Riya got engaged' (for written updates the rules below don't cover)."""
+    s = re.sub(r"^(?:hi|hello|namaskar|namaste)?\s*(?:aaji|aai|aaba|tai|dada|nani|dadi)?[,!]?\s*", "", sentence.strip(), flags=re.I)
+    s = re.sub(r"^(?:i am|i'm)\b", f"{name} is", s, flags=re.I)
+    s = re.sub(r"^i've\b", f"{name} has", s, flags=re.I)
+    s = re.sub(r"\bI\b", name, s)
+    s = re.sub(r"\bmy\b", f"{name}'s", s, flags=re.I)
+    s = re.sub(r"\bme\b", name, s, flags=re.I)
+    return s.rstrip(".!? ")
+
+
+def extract(lines: list[dict], contact: dict, patient_name: str, call_date: datetime, generic: bool = False) -> dict:
+    """generic=True (written updates from the contact link): a sentence no rule recognises is still kept as one fact."""
     name = contact["name"]
     cands: list[dict] = []
     recap_bits: list[str] = []
@@ -59,6 +71,7 @@ def extract(lines: list[dict], contact: dict, patient_name: str, call_date: date
             low = s.lower()
             if speaker == "contact":
                 said.append(s)
+                before = len(cands)
                 if m := re.search(r"don'?t tell (?:\w+ )?(?:about )?(.+?)[.!?]?$", s, re.I):
                     topic = m.group(1).strip().rstrip(".!")
                     cands.append(_cand("sensitive", f"Do not mention {topic} to {patient_name}", "contact", "other", s,
@@ -89,6 +102,9 @@ def extract(lines: list[dict], contact: dict, patient_name: str, call_date: date
                 if m := re.search(r"\bi (?:really )?(?:love|like|enjoy) ([\w ]+)", s, re.I):
                     cands.append(_cand("preference", f"{name} enjoys {m.group(1).strip()}", "contact", "contact_self", s,
                                        importance=0.5, confidence=0.7))
+                if generic and len(cands) == before and len(s.split()) >= 3:
+                    cands.append(_cand("fact", _third_person(s, name), "contact", "contact_self", s,
+                                       importance=0.6, confidence=0.65))
             else:
                 if m := re.search(rf"\b(?:you are|you're|{re.escape(name)} is) my ({RELATIONS})\b", s, re.I):
                     cands.append(_cand("relationship", f"{name} is {patient_name}'s {m.group(1).lower()}", "patient",
@@ -139,11 +155,14 @@ def _event_noun(content: str, name: str) -> str:
     return m.group(1) if m else content.replace(f"{name} has ", "")
 
 
-def brief(contact: dict, items: list[dict], last_calls: list[dict], now: datetime, patient_name: str = "") -> dict:
+def brief(contact: dict, items: list[dict], last_calls: list[dict], now: datetime, patient_name: str = "",
+          identity_first: bool = False) -> dict:
     name = contact["name"]
-    you = lambda text: text.replace(f" {patient_name}", " you") if patient_name else text
+    shown = contact.get("known_as") or name  # the name the patient uses
+    you = lambda text: text.replace(f"{patient_name}'s", "your").replace(f" {patient_name}", " you") if patient_name else text
     rel = next((i for i in items if i["type"] == "relationship"), None)
-    lines = [{"icon": "person", "text": f"{name} is your {contact.get('relation', 'family')}.",
+    detail = f" ({contact['relation_detail']})" if identity_first and contact.get("relation_detail") else ""
+    lines = [{"icon": "person", "text": f"{shown} is your {contact.get('relation', 'family')}{detail}.",
               "memory_ids": [rel["id"]] if rel else []}]
     suggestions = []
 
@@ -154,7 +173,7 @@ def brief(contact: dict, items: list[dict], last_calls: list[dict], now: datetim
             if it["type"] == "event":
                 suggestions.append(f"How did your {_event_noun(it['content'], name)} go?")
         else:
-            lines.append({"icon": "calendar", "text": you(it["content"]) + ".", "memory_ids": [it["id"]]})
+            lines.append({"icon": "calendar", "text": you(it["content"]).rstrip(".") + ".", "memory_ids": [it["id"]]})
             if it["type"] == "event" and len(suggestions) < 2:
                 suggestions.append(f"All the best for your {_event_noun(it['content'], name)}!")
     if last_calls and last_calls[0].get("recap"):
@@ -165,7 +184,7 @@ def brief(contact: dict, items: list[dict], last_calls: list[dict], now: datetim
     for it in sorted((i for i in items if i["type"] == "fact"), key=lambda i: "lives" not in i["content"]):
         if len(lines) >= 5:
             break
-        lines.append({"icon": "place" if "lives" in it["content"] else "star", "text": you(it["content"]) + ".",
+        lines.append({"icon": "place" if "lives" in it["content"] else "star", "text": you(it["content"]).rstrip(".") + ".",
                       "memory_ids": [it["id"]]})
     for it in items:
         m = re.search(r"\b(?:loves|enjoys|likes)\s+(.+)", it["content"]) if it["type"] == "preference" else None
@@ -177,5 +196,6 @@ def brief(contact: dict, items: list[dict], last_calls: list[dict], now: datetim
     speech = " ".join(l["text"] for l in lines[:3])
     if suggestions:
         speech += f" You could ask: {suggestions[0]}"
-    return {"headline": f"{name} — your {contact.get('relation', 'family')}", "lines": lines,
+    return {"headline": f"{shown} — your {contact.get('relation', 'family')}",
+            "relation_phrase": f"your {contact.get('relation', 'family')}", "lines": lines,
             "suggestions": suggestions, "speech": speech}

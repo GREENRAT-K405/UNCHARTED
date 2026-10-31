@@ -47,7 +47,7 @@ def serialize(value: Any) -> Any:
     if isinstance(value, list):
         return [serialize(v) for v in value]
     if isinstance(value, dict):
-        return {("id" if k == "_id" else k): serialize(v) for k, v in value.items() if k != "embedding"}
+        return {("id" if k == "_id" else k): serialize(v) for k, v in value.items() if k not in ("embedding", "firebase_uid")}
     return value
 
 
@@ -166,12 +166,15 @@ async def search(
     limit: int = 10,
     statuses: tuple[str, ...] = ("active",),
     visibility: str | None = None,
+    types: tuple[str, ...] | list[str] | None = None,
+    created_after: datetime | None = None,
 ) -> list[tuple[dict, float]]:
     """Semantic search over one patient's memories about one contact.
 
     Uses Atlas $vectorSearch with pre-filters when available and falls back to
     an exact in-app cosine scan (fine at hackathon scale) otherwise. Only memories embedded
-    by the same model as the query are compared.
+    by the same model as the query are compared. `types` and `created_after` use the
+    index's `type` and `created_at` filter fields (e.g. "recent topics" in the brief).
     """
     filters: list[dict] = [{"owner_id": owner_id}, {"status": {"$in": list(statuses)}},
                            {"embedding_model": getattr(query_vector, "model", embeddings.LOCAL_MODEL)}]
@@ -179,6 +182,10 @@ async def search(
         filters.append({"contact_id": contact_id})
     if visibility:
         filters.append({"visibility": visibility})
+    if types:
+        filters.append({"type": {"$in": list(types)}})
+    if created_after is not None:
+        filters.append({"created_at": {"$gte": created_after}})
 
     if db.capabilities["vector_search"]:
         pipeline = [

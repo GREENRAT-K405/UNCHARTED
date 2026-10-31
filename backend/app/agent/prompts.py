@@ -27,7 +27,7 @@ Rules:
 - Set sensitive=true for illness, death, money trouble, family conflict, or anything a speaker asked to keep from the patient. Write the content as a guardrail, e.g. "Do not mention Papa's surgery to Aaji".
 - For events and plans set expires_after_event_days (usually 2-3). For other types leave event_date and expires_after_event_days null unless time-bound.
 - importance: 0-1, how useful this is to bring up next call. confidence: 0-1, how sure you are it was actually stated.
-- patient_recap: one or two short, warm sentences in second person to read aloud to the patient right after the call ("You just talked to Riya. She is coming to visit on Sunday."). Never include sensitive items.
+- patient_recap: one or two short, warm sentences in second person to read aloud to the patient right after the call ("You just talked to Riya. She is coming to visit on Sunday."). Never include sensitive items. Write it in the patient's language when one is given; everything else stays in English.
 - summary: 1-2 sentence neutral summary of the call for the family log.
 If nothing is worth remembering return an empty candidates list."""
 
@@ -114,15 +114,21 @@ Principles:
 - Only use the memories provided. Prefer open loops (an exam or visit around today) as suggestions:
   if the event already happened, suggest asking how it went.
 - The guardrails list contains things that must NEVER appear on the card, even indirectly.
-- Each line lists the ids of the memories it is based on.
-- speech: the card as one or two natural sentences to read aloud."""
+- Each line lists the ids of the memories it is based on. Prefer one memory per line.
+- speech: the card as one or two natural sentences to read aloud.
+- Language: write headline, lines, speech and relation_phrase in patient_language. Write suggestions in English:
+  they are shown to the family member on the call, not to the patient.
+- relation_phrase: how the contact is related, from the patient's point of view, e.g. "your granddaughter".
+- If identity_first is true, the patient has recently asked several times who this person is: make the first line
+  say plainly who they are and how they are related, using relation_detail when given."""
 
 BRIEF_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["headline", "lines", "suggestions", "speech"],
+    "required": ["headline", "relation_phrase", "lines", "suggestions", "speech"],
     "properties": {
         "headline": {"type": "string"},
+        "relation_phrase": {"type": "string"},
         "lines": {
             "type": "array",
             "items": {

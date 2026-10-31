@@ -3,23 +3,14 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { useCaregiverAuth } from "../lib/auth.jsx";
 import { firebaseEnabled, friendlyError } from "../lib/identity.js";
-
-function GoogleMark() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden>
-      <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.8 6C12.4 13.7 17.7 9.5 24 9.5z" />
-      <path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-17.1z" />
-      <path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.8-6C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.8-6z" />
-      <path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.4-5.7c-2.1 1.4-4.7 2.2-7.8 2.2-6.3 0-11.6-4.2-13.5-9.9l-7.8 6C6.6 42.6 14.6 48 24 48z" />
-    </svg>
-  );
-}
+import { GoogleMark } from "../components/common.jsx";
 
 export default function Login() {
   const { user, me, identity } = useCaregiverAuth();
   const [params] = useSearchParams();
   const nav = useNavigate();
   const invite = params.get("invite");
+  const asRelative = params.get("as") === "relative"; // a family member: they get calls, not the dashboard
   const [mode, setMode] = useState("signin"); // signin | signup | reset
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [busy, setBusy] = useState(false);
@@ -50,7 +41,7 @@ export default function Login() {
           return;
         }
       }
-      nav(params.get("next") || "/caregiver", { replace: true });
+      nav(params.get("next") || (asRelative ? "/family" : "/caregiver"), { replace: true });
     })();
   }, [user, me]);
 
@@ -90,19 +81,32 @@ export default function Login() {
     <div className="auth-page">
       <div className="auth-side">
         <Link to="/" className="auth-brand">Pehchaan</Link>
-        <h1>Help the person you care for recognise every caller.</h1>
-        <ul className="auth-points">
-          <li>See who called, what was said, and what's coming up.</li>
-          <li>Correct or hide anything before it reaches them.</li>
-          <li>Share care with family; everyone sees the same picture.</li>
-        </ul>
-        <p className="auth-fine">Their tablet never needs a password. You pair it once with a 6-digit code.</p>
+        {asRelative ? (
+          <>
+            <h1>Be there when they call.</h1>
+            <ul className="auth-points">
+              <li>Your phone or laptop rings when they want to talk to family.</li>
+              <li>Tell them your news; it helps them remember you.</li>
+              <li>See what to ask about and how past calls went.</li>
+            </ul>
+          </>
+        ) : (
+          <>
+            <h1>Help the person you care for recognise every caller.</h1>
+            <ul className="auth-points">
+              <li>See who called, what was said, and what's coming up.</li>
+              <li>Correct or hide anything before it reaches them.</li>
+              <li>Share care with family; everyone sees the same picture.</li>
+            </ul>
+          </>
+        )}
+        {!asRelative && <p className="auth-fine">They can sign in with their own account, or you pair their tablet once with a 6-digit code.</p>}
       </div>
       <div className="auth-main">
         <div className="auth-card">
           {mismatch && <div className="auth-error" role="alert">{mismatch}</div>}
           {invite && <div className="auth-invite">You've been invited to join a family care circle. Sign in to accept.</div>}
-          <h2>{mode === "signup" ? "Create your caregiver account" : mode === "reset" ? "Reset your password" : "Sign in to Pehchaan"}</h2>
+          <h2>{mode === "signup" ? (asRelative ? "Create your account" : "Create your caregiver account") : mode === "reset" ? "Reset your password" : "Sign in to Pehchaan"}</h2>
 
           {mode !== "reset" && (
             <>
@@ -147,6 +151,7 @@ export default function Login() {
             {mode !== "signin" && <button className="btn-link" onClick={() => setMode("signin")}>Back to sign in</button>}
           </div>
         </div>
+        {!asRelative && <p className="auth-fine center">Just a family member? <Link to="/login?as=relative">Sign in here</Link> to get their calls.</p>}
         <p className="auth-fine center">Setting up the patient's tablet? Open <Link to="/patient">/patient</Link> on it.</p>
       </div>
     </div>

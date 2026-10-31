@@ -5,6 +5,8 @@ Caregiver-set constraint memories carry a structured `rule`:
   {"kind": "max_calls_per_day", "value": 3}                    hard block
   {"kind": "min_gap_minutes", "value": 60}                     soft, "Call anyway?"
 Without a min_gap rule the default gap from settings applies.
+An archived contact (someone who has died or is no longer in touch) is always refused, gently:
+the patient is offered someone else to call, and is never told why.
 """
 from datetime import datetime, time, timedelta
 
@@ -28,7 +30,14 @@ def _in_window(now_t: time, start: time, end: time) -> bool:
     return start <= now_t < end if start <= end else (now_t >= start or now_t < end)
 
 
+NOT_A_CALL = ["cancelled", "blocked", "unanswered", "declined"]  # attempts that never became a conversation
+
+
 async def check(owner_id: ObjectId, contact: dict) -> dict:
+    if contact.get("status") == "archived":
+        return {"allowed": False, "can_override": False, "archived": True, "constraint_id": None,
+                "message": "Let's call someone else today.",
+                "reason": "Archived contact: calls are not placed"}
     now = clock.now()
     local = now.astimezone(settings.tz)
     cid = contact["_id"]
@@ -39,11 +48,11 @@ async def check(owner_id: ObjectId, contact: dict) -> dict:
         "$or": [{"contact_id": cid}, {"contact_id": None}]})]
     rules = [r for r in rules if ms.is_live(r, now)]
 
-    last = await db.calls.find_one({"patient_id": owner_id, "contact_id": cid, "status": {"$nin": ["cancelled", "blocked"]}},
+    last = await db.calls.find_one({"patient_id": owner_id, "contact_id": cid, "status": {"$nin": NOT_A_CALL}},
                                    sort=[("started_at", -1)])
     day_start = datetime.combine(local.date(), time(0), tzinfo=settings.tz)
     today_count = await db.calls.count_documents({
-        "patient_id": owner_id, "contact_id": cid, "status": {"$nin": ["cancelled", "blocked"]}, "started_at": {"$gte": day_start}})
+        "patient_id": owner_id, "contact_id": cid, "status": {"$nin": NOT_A_CALL}, "started_at": {"$gte": day_start}})
 
     # The most relevant upcoming plan, to reassure rather than just refuse.
     plan = await db.memories.find_one({
@@ -53,7 +62,7 @@ async def check(owner_id: ObjectId, contact: dict) -> dict:
     patient = await db.users.find_one({"_id": owner_id}, {"name": 1})
     plan_text = ""
     if plan and ms.is_live(plan, now):
-        plan_text = " " + plan["content"].replace(f" {patient['name']}", " you") + "."
+        plan_text = " " + plan["content"].replace(f" {patient['name']}", " you").rstrip(".") + "."
 
     base = {"last_call_at": last["started_at"].isoformat() if last else None, "calls_today": today_count}
 

@@ -21,7 +21,9 @@ async def stats(pid: str, days: int = 14, p: Principal = Depends(auth.current)):
     tz = settings.timezone
 
     call_facets = await db.calls.aggregate([
-        {"$match": {"patient_id": patient_id, "started_at": {"$gte": prev_since, "$lte": now}}},
+        # Unanswered, declined and cancelled attempts never became conversations.
+        {"$match": {"patient_id": patient_id, "started_at": {"$gte": prev_since, "$lte": now},
+                    "status": {"$nin": ["unanswered", "declined", "cancelled"]}}},
         {"$facet": {
             "per_day": [
                 {"$match": {"started_at": {"$gte": since}}},
@@ -47,6 +49,20 @@ async def stats(pid: str, days: int = 14, p: Principal = Depends(auth.current)):
                 {"$group": {"_id": {"hour": {"$hour": {"date": "$started_at", "timezone": tz}},
                                     "blocked": {"$eq": ["$status", "blocked"]}},
                             "count": {"$sum": 1}}},
+            ],
+            # "Who is this?" asked during calls (button or voice), per person: a recurring confusion too.
+            "who_asks": [
+                {"$match": {"started_at": {"$gte": since}, "overlay": {"$exists": True}}},
+                {"$project": {"contact_id": 1, "started_at": 1,
+                              "asks": {"$add": [{"$ifNull": ["$overlay.button", 0]}, {"$ifNull": ["$overlay.voice", 0]}]}}},
+                {"$match": {"asks": {"$gt": 0}}},
+                {"$group": {"_id": "$contact_id", "asks": {"$sum": "$asks"}, "calls": {"$sum": 1},
+                            "repeated_calls": {"$sum": {"$cond": [{"$gte": ["$asks", 2]}, 1, 0]}},
+                            "last": {"$max": "$started_at"}}},
+                {"$lookup": {"from": "contacts", "localField": "_id", "foreignField": "_id", "as": "contact",
+                             "pipeline": [{"$project": {"name": 1, "relation": 1}}]}},
+                {"$unwind": "$contact"},
+                {"$sort": {"asks": -1}},
             ],
             "totals": [
                 {"$group": {"_id": {"$gte": ["$started_at", since]},
@@ -133,6 +149,9 @@ async def stats(pid: str, days: int = 14, p: Principal = Depends(auth.current)):
         "upcoming": mf["upcoming"],
         "confusions": [{"content": r["_id"], "times": r["times"], "last": r["last"], "contact_id": r["contact_id"],
                         "statuses": r["statuses"]} for r in mf["confusions"]],
+        "who_asks": [{"contact_id": r["_id"], "name": r["contact"]["name"], "relation": r["contact"].get("relation"),
+                      "asks": r["asks"], "calls": r["calls"], "repeated_calls": r["repeated_calls"], "last": r["last"]}
+                     for r in cf["who_asks"]],
         "activity": activity,
         "devices": devices,
     })
