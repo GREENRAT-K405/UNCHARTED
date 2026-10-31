@@ -1,3 +1,7 @@
+// Where the backend lives. Empty (local dev): same origin, through Vite's proxy. Deployed with the
+// frontend on another host (Vercel), VITE_API_URL points at the backend so WebSockets reach it directly.
+const API_ORIGIN = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+
 // Every request carries the ID token of whichever identity the current page uses
 // (caregiver dashboard -> caregiver; patient screens -> paired device; join page -> none).
 let tokenGetter = null;
@@ -15,7 +19,7 @@ async function request(method, path, body, tokenOverride) {
   if (body) headers["Content-Type"] = "application/json";
   const token = tokenOverride ?? (tokenGetter ? await tokenGetter() : null);
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`/api${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const res = await fetch(`${API_ORIGIN}/api${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -36,6 +40,7 @@ export const api = {
 };
 
 export function wsUrl(path) {
+  if (API_ORIGIN) return API_ORIGIN.replace(/^http/, "ws") + path;
   const proto = location.protocol === "https:" ? "wss" : "ws";
   return `${proto}://${location.host}${path}`;
 }

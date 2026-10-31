@@ -178,6 +178,18 @@ docker compose down        # stop MongoDB, keep data
 docker compose down -v     # stop MongoDB and delete all data
 ```
 
+## 9. Deploy (Render backend + Vercel frontend)
+
+**Render** (Web Service, repo root dir `backend`):
+- Build: `pip install -r requirements.txt`
+- Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Health check: `/api/health`
+- Env: `PYTHON_VERSION=3.12.7`, `MONGODB_URI`, `MONGODB_DB`, `GROQ_API_KEY`, `VOYAGE_API_KEY`, `VOYAGE_BASE_URL`, `FIREBASE_PROJECT_ID`, `TIMEZONE`, and `PUBLIC_BASE_URL` = the Vercel URL.
+
+**Vercel** (root dir `frontend`, Vite preset): env `VITE_FIREBASE_*` and `VITE_API_URL` = the Render URL (no trailing slash). The browser talks to Render directly, because Vercel rewrites can't carry WebSockets. `frontend/vercel.json` sends every route to the app.
+
+Also: Atlas Network Access must allow `0.0.0.0/0`, and the Vercel domain must be in Firebase → Authentication → Authorized domains.
+
 ## Troubleshooting
 
 - **Port 27017 in use:** stop any local `mongod`, or change the port mapping in `docker-compose.yml` and `MONGODB_URI`.
