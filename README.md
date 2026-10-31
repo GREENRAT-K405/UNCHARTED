@@ -89,10 +89,10 @@ check. It's for local development only, and the backend logs a warning at startu
 
 ### Two-laptop demo
 
-Browsers allow camera and microphone only on `https://` or `localhost`. For a second laptop, either open the dev server
-through a tunnel (e.g. `cloudflared tunnel --url http://localhost:5173`) or, in Chrome on laptop B, add the LAN URL
-under `chrome://flags/#unsafely-treat-insecure-origin-as-secure`. Set `PUBLIC_BASE_URL` in `backend/.env` so join links
-point at the right host. On one machine, the receiver can simply open the join link in a second Chrome window.
+Browsers allow camera and microphone only on `https://` or `localhost`. For a second laptop on the same Wi-Fi, run
+`npm run dev:https` on the host (self-signed certificate; laptop B accepts the warning once) and set
+`PUBLIC_BASE_URL=https://<host-ip>:5173` in `backend/.env` so join links point at the right host. Across networks,
+use a tunnel (e.g. `cloudflared tunnel --url http://localhost:5173`). On one machine, the receiver can simply open the join link in a second Chrome window.
 
 ### Offline fallbacks
 

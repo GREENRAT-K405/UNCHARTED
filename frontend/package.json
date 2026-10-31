@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
+    "dev:https": "vite --host --mode https",
     "build": "vite build",
     "preview": "vite preview --host"
   },
@@ -15,6 +16,7 @@
     "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^1.2.0",
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^5.4.8"
   }

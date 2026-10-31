@@ -124,6 +124,21 @@ Sign in on the caregiver dashboard and choose **Explore the demo family**. Then 
 
 For a two-person call, open the patient screen in one Chrome window and the contact's join link in a second window or Chrome profile. Use **Reset demo** on the dashboard to restore the seed data.
 
+### Two laptops on the same Wi-Fi
+
+Browsers only allow camera and microphone on `https://` or `localhost`. A second laptop opening `http://<host-ip>:5173`
+joins the call with no camera or mic, and the call screen shows a red "not a secure page" banner. Serve HTTPS instead.
+
+On the host laptop only:
+
+1. Set `PUBLIC_BASE_URL=https://<host-ip>:5173` in `backend/.env` (find the IP with `hostname -I` on Linux or
+   `ipconfig` on Windows), then restart the backend so join links use that address.
+2. Run the frontend with `npm run dev:https` instead of `npm run dev`.
+3. Open ports 5173 and 8000 in the firewall (Fedora: `sudo firewall-cmd --add-port=5173/tcp --add-port=8000/tcp`).
+
+The other laptop runs nothing. It opens the join link in Chrome, clicks **Advanced → Proceed** on the certificate
+warning (the certificate is self-signed), and allows camera and microphone.
+
 ## 6. Verify
 
 `smoke.py` signs in with dev tokens, so run it with `FIREBASE_PROJECT_ID` unset (dev auth mode).

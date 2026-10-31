@@ -7,6 +7,21 @@ import { createTranscriber, speechSupported } from "../lib/speech.js";
 import { speak, stopSpeaking } from "../lib/tts.js";
 import { Avatar, BriefCard } from "../components/common.jsx";
 
+function mediaMessage(err) {
+  if (err === "insecure")
+    return `Camera and microphone are blocked: ${location.origin} is not a secure page. ` +
+      "Open the https:// link instead (the host runs npm run dev:https).";
+  const camOnly = err.startsWith("camera:");
+  const name = camOnly ? err.slice(7) : err;
+  const what = camOnly ? "Camera" : "Camera and microphone";
+  const why = {
+    NotAllowedError: "permission was denied. Click the camera icon in the address bar and allow access.",
+    NotFoundError: "no device was found.",
+    NotReadableError: "the device is in use by another app or tab.",
+  }[name] || `could not be opened (${name}).`;
+  return `${what} unavailable: ${why}${camOnly ? " The other person can still hear you." : " The other person can't see or hear you."}`;
+}
+
 export default function CallPage({ role }) {
   const { callId } = useParams();
   const [params] = useSearchParams();
@@ -30,6 +45,7 @@ export default function CallPage({ role }) {
   const [sttError, setSttError] = useState(null);
   const [hasLocalVideo, setHasLocalVideo] = useState(false);
   const [hasRemote, setHasRemote] = useState(false);
+  const [mediaError, setMediaError] = useState(null);
 
   const localVideo = useRef(null);
   const remoteVideo = useRef(null);
@@ -75,6 +91,7 @@ export default function CallPage({ role }) {
       if (disposed) return p.close();
       if (stream && localVideo.current) localVideo.current.srcObject = stream;
       setHasLocalVideo(!!stream?.getVideoTracks().length);
+      setMediaError(p.mediaError);
 
       sock.current = openSocket(`/ws/call/${callId}?role=${role}`, async (msg) => {
         switch (msg.type) {
@@ -264,6 +281,8 @@ export default function CallPage({ role }) {
             </button>
           </div>
         )}
+
+        {mediaError && <div className="media-error" role="alert">{mediaMessage(mediaError)}</div>}
 
         <div className="captions" aria-live="polite">
           {offRecord && <div className="off-banner">Off the record — nothing is being saved</div>}

@@ -143,6 +143,7 @@ a { color: var(--brand); }
 .cap.me { align-self: flex-end; background: rgba(31, 92, 79, 0.82); }
 .cap.interim { opacity: 0.7; font-style: italic; }
 .cap.off { opacity: 0.6; }
+.media-error { position: absolute; top: 110px; left: 50%; transform: translateX(-50%); width: min(720px, calc(100% - 32px)); background: var(--bad); color: #fff; font-weight: 700; padding: 12px 18px; border-radius: 14px; z-index: 5; text-align: center; }
 .off-banner { align-self: center; background: var(--warn); color: #fff; font-weight: 700; padding: 6px 16px; border-radius: 999px; }
 
 .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: center; padding: 16px; background: #1d1a16; }

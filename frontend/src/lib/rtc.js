@@ -12,18 +12,27 @@ export class Peer {
     this.localStream = null;
     this.pc = null;
     this.pendingIce = [];
+    this.mediaError = null; // why camera/mic could not be opened, for the call UI
   }
 
   async startMedia() {
+    // On plain http (anything but localhost) the browser hides mediaDevices entirely.
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      this.mediaError = "insecure";
+      this.localStream = null;
+      return null;
+    }
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
-    } catch {
+    } catch (e) {
       try {
         this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch {
+        this.mediaError = `camera:${e.name}`;
+      } catch (e2) {
+        this.mediaError = e2.name;
         this.localStream = null; // no devices or blocked; the call UI still works with typed transcript
       }
     }
