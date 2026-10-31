@@ -128,7 +128,8 @@ async def process_call(call_id: ObjectId) -> dict:
     # Find neighbours for every candidate (vector search + same-type structural facts).
     threshold = settings.reconcile_sim_threshold if embeddings.MODE == "voyage" else 0.6
     to_reconcile, fast_add = [], []
-    cand_vectors = await embeddings.embed([c["content"] for c in candidates], "query")
+    # One batched request; the same vectors are stored with the new memories (no second embed per memory).
+    cand_vectors = await embeddings.embed([c["content"] for c in candidates], "document")
     for i, (cand, vec) in enumerate(zip(candidates, cand_vectors)):
         trust, kind = _trust_for(cand["speaker"], cand["about"])
         hits = await ms.search(owner_id, contact["_id"], vec, limit=5, statuses=("active", "pending_review"))
@@ -136,9 +137,9 @@ async def process_call(call_id: ObjectId) -> dict:
         if cand["type"] in ("fact", "relationship"):
             for d in existing:
                 if d["type"] == cand["type"] and str(d["_id"]) not in neighbours:
-                    neighbours[str(d["_id"])] = (d, embeddings.cosine(vec, d.get("embedding")))
+                    neighbours[str(d["_id"])] = (d, embeddings.similarity(vec, d))
         item = {
-            "index": i, "candidate": cand, "trust": trust, "source_kind": kind,
+            "index": i, "candidate": cand, "trust": trust, "source_kind": kind, "vector": vec,
             "neighbours": [
                 {"id": mid, "type": d["type"], "content": d["content"], "trust": d.get("trust", 0.5),
                  "status": d["status"], "similarity": round(s, 3)}
@@ -209,6 +210,7 @@ async def _apply(item: dict, decision: dict, owner_id: ObjectId, contact: dict, 
         "quote": cand.get("quote", "")[:300],
     }
     common = dict(owner_id=owner_id, contact_id=contact["_id"], type=mtype, source=source, trust=trust,
+                  embedding=item["vector"],
                   confidence=cand.get("confidence", 0.8), importance=cand.get("importance", 0.5),
                   visibility=visibility, event_date=event_date, expires_at=expires_at)
     result = {"action": action, "content": cand["content"], "reason": decision.get("reason", ""),

@@ -73,7 +73,7 @@ async def build_brief(owner_id: ObjectId, contact: dict, call_id: ObjectId | Non
     items = []
     for key, entry in pool.items():
         d = entry["doc"]
-        sim = entry["sim"] if entry["sim"] is not None else embeddings.cosine(qvec, d.get("embedding"))
+        sim = entry["sim"] if entry["sim"] is not None else embeddings.similarity(qvec, d)
         rec = _recency(d, now)
         boost = OPEN_LOOP_BOOST if _open_loop(d, now) else 0.0
         fb = d.get("feedback") or {}

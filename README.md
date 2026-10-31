@@ -101,10 +101,16 @@ Each external piece degrades instead of breaking, and the dashboard sidebar show
 | Piece | Normal | Fallback |
 |---|---|---|
 | Memory agent and brief writer | Claude (`claude-opus-5-5`, structured JSON output) | Rule-based extractor and template brief (`app/agent/offline.py`) |
-| Embeddings | Voyage `voyage-3.5`, 1024 dims | Local hashed embedding, same width |
+| Embeddings | Voyage `voyage-3.5`, 1024 dims (voyageai.com key, or an Atlas-issued key with `VOYAGE_BASE_URL=https://ai.mongodb.com/v1`) | Local hashed embedding, same width |
 | Retrieval | Atlas `$vectorSearch` with pre-filters | Exact in-app cosine scan |
 | Live updates | MongoDB change streams | Events emitted from app code |
 | Speech-to-text | Web Speech API (Chrome) | "Type instead" box on the call screen |
+
+Every vector is stored with the model that produced it (`embedding_model`, also a filter field on the vector index),
+and searches only compare vectors from the same model. If Voyage is briefly unavailable or rate-limited (free-tier
+keys without a payment method get 3 requests per minute), new memories get local vectors, and a background job
+re-embeds them with Voyage a minute later. Voyage results are cached in `embedding_cache` (TTL 30 days), so the same
+text is never embedded twice.
 
 Claude requests set `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`). If a safety classifier declines,
 the API retries on its recommended fallback model. If the whole chain declines, the app uses the offline path.

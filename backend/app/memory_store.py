@@ -83,15 +83,17 @@ async def insert_memory(
     rule: dict | None = None,
     conflicts_with: ObjectId | None = None,
     actor: str = "agent",
-    embedding: list[float] | None = None,
+    embedding: "embeddings.Vector | None" = None,
 ) -> dict:
     now = clock.now()
+    vec = embedding if embedding is not None else await embeddings.embed_one(content)
     doc = {
         "owner_id": owner_id,
         "contact_id": contact_id,
         "type": type,
         "content": content,
-        "embedding": embedding if embedding is not None else await embeddings.embed_one(content),
+        "embedding": list(vec),
+        "embedding_model": getattr(vec, "model", embeddings.LOCAL_MODEL),
         "source": source,
         "trust": round(trust, 2),
         "confidence": round(confidence, 2),
@@ -130,7 +132,8 @@ async def supersede(old: dict, new_id: ObjectId, actor: str = "agent"):
 
 
 async def update_content(mem: dict, content: str, actor: str, extra: dict | None = None):
-    sets = {"content": content, "embedding": await embeddings.embed_one(content), "updated_at": clock.now()}
+    vec = await embeddings.embed_one(content)
+    sets = {"content": content, "embedding": list(vec), "embedding_model": vec.model, "updated_at": clock.now()}
     sets.update(extra or {})
     await db.memories.update_one({"_id": mem["_id"]}, {"$set": sets, "$inc": {"version": 1}})
     await log_event(mem["_id"], "updated" if actor == "agent" else "corrected", mem["owner_id"], actor)
@@ -158,7 +161,7 @@ def expiry_for(event_date: datetime | None, days_after: float | None) -> datetim
 async def search(
     owner_id: ObjectId,
     contact_id: ObjectId | None,
-    query_vector: list[float],
+    query_vector: "embeddings.Vector",
     *,
     limit: int = 10,
     statuses: tuple[str, ...] = ("active",),
@@ -167,9 +170,11 @@ async def search(
     """Semantic search over one patient's memories about one contact.
 
     Uses Atlas $vectorSearch with pre-filters when available and falls back to
-    an exact in-app cosine scan (fine at hackathon scale) otherwise.
+    an exact in-app cosine scan (fine at hackathon scale) otherwise. Only memories embedded
+    by the same model as the query are compared.
     """
-    filters: list[dict] = [{"owner_id": owner_id}, {"status": {"$in": list(statuses)}}]
+    filters: list[dict] = [{"owner_id": owner_id}, {"status": {"$in": list(statuses)}},
+                           {"embedding_model": getattr(query_vector, "model", embeddings.LOCAL_MODEL)}]
     if contact_id is not None:
         filters.append({"contact_id": contact_id})
     if visibility:
@@ -180,7 +185,7 @@ async def search(
             {"$vectorSearch": {
                 "index": settings.vector_index_name,
                 "path": "embedding",
-                "queryVector": query_vector,
+                "queryVector": list(query_vector),
                 "numCandidates": max(100, limit * 10),
                 "limit": limit,
                 "filter": {"$and": filters},

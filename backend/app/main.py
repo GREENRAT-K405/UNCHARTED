@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):
         log.info("seeding demo family: %s", await seed_demo())
     hub.refresh_brief = _refresh_brief
     await hub.start()
+    spawn(_reembed_loop())
     log.info("ready: auth=%s llm=%s embeddings=%s capabilities=%s", settings.auth_mode, llm.status["mode"],
              embeddings.MODE, db.capabilities)
     if settings.auth_mode == "dev":
@@ -62,6 +63,17 @@ app = FastAPI(title="Pehchaan", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.include_router(auth_router)
 app.include_router(stats_router)
+
+
+async def _reembed_loop():
+    """Upgrade fallback vectors to the primary model, one batch per minute (fits free-tier rate limits)."""
+    while True:
+        try:
+            while await embeddings.reembed_stale():
+                await asyncio.sleep(25)
+        except Exception:
+            log.exception("re-embed pass failed")
+        await asyncio.sleep(60)
 
 
 # ---------------------------------------------------------------- helpers
@@ -107,7 +119,8 @@ async def _refresh_brief(call: dict) -> dict:
 @app.get("/api/health")
 async def health():
     return {"ok": True, "auth": settings.auth_mode, "firebase_project_id": settings.firebase_project_id,
-            "llm": llm.status, "embeddings": embeddings.MODE, "capabilities": db.capabilities,
+            "llm": llm.status, "embeddings": embeddings.MODE, "embedding_model": embeddings.PRIMARY_MODEL,
+            "embedding_status": embeddings.status, "capabilities": db.capabilities,
             "clock": {"now": clock.now().isoformat(), "offset_days": clock.offset_days()}}
 
 

@@ -102,7 +102,7 @@ class Hub:
         updated = []
         if op == "update":
             updated = [k for k in change.get("updateDescription", {}).get("updatedFields", {}) if k != "embedding"]
-            if updated and set(updated) <= {"last_retrieved_at", "retrieval_count"}:
+            if updated and set(updated) <= {"last_retrieved_at", "retrieval_count", "embedding_model"}:
                 return  # retrieval bookkeeping, not interesting for the live feed
         pre = change.get("fullDocumentBeforeChange") or {}
         # TTL deletes happen once the real clock passes expires_at; a caregiver "forget" usually doesn't.

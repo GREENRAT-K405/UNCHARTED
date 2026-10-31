@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     # Embeddings. voyage-3.5 -> 1024 dims. Without VOYAGE_API_KEY a local
     # hashed embedding of the same width is used so the pipeline still runs.
     voyage_api_key: str | None = None
+    # Atlas-issued model API keys use MongoDB's endpoint (https://ai.mongodb.com/v1); leave unset for voyageai.com keys.
+    voyage_base_url: str | None = None
     voyage_model: str = "voyage-3.5"
     embedding_dims: int = 1024
 

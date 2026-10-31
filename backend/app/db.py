@@ -26,12 +26,13 @@ devices = db.devices  # paired patient tablets (anonymous Firebase uid -> patien
 pairing_codes = db.pairing_codes  # short-lived codes shown on an unpaired tablet (TTL)
 invites = db.invites  # family invite codes (TTL)
 auth_events = db.auth_events  # sign-ins, pairings, joins (TTL, 90 days)
+embedding_cache = db.embedding_cache  # model+text hash -> vector, so nothing is embedded twice (TTL, 30 days)
 
 # Filled in by ensure_indexes(): tells the rest of the app which Atlas features work.
 capabilities = {"vector_search": False, "change_streams": False, "pre_images": False}
 
 COLLECTIONS = ["users", "contacts", "calls", "transcript_chunks", "memories", "briefs", "memory_events",
-               "memberships", "devices", "pairing_codes", "invites", "auth_events"]
+               "memberships", "devices", "pairing_codes", "invites", "auth_events", "embedding_cache"]
 
 
 async def ensure_indexes() -> None:
@@ -68,6 +69,8 @@ async def ensure_indexes() -> None:
     await auth_events.create_index([("patient_id", ASCENDING), ("ts", DESCENDING)])
     await auth_events.create_index([("ts", ASCENDING)], expireAfterSeconds=90 * 24 * 3600, name="auth_events_ttl")
     await calls.create_index([("patient_id", ASCENDING), ("started_at", DESCENDING)])
+    await embedding_cache.create_index([("created_at", ASCENDING)], expireAfterSeconds=30 * 24 * 3600, name="embed_cache_ttl")
+    await memories.create_index("embedding_model")
 
     # Pre-images let the dashboard show *what* expired when TTL deletes a memory.
     try:
@@ -89,15 +92,22 @@ async def _ensure_vector_index() -> None:
             {"type": "filter", "path": "status"},
             {"type": "filter", "path": "visibility"},
             {"type": "filter", "path": "created_at"},
+            {"type": "filter", "path": "embedding_model"},  # never compare vectors from different models
         ]
     }
     try:
-        names = [ix["name"] async for ix in memories.list_search_indexes()]
-        if settings.vector_index_name not in names:
+        existing = {ix["name"]: ix async for ix in memories.list_search_indexes()}
+        current = existing.get(settings.vector_index_name)
+        if current is None:
             await memories.create_search_index(
                 SearchIndexModel(definition=definition, name=settings.vector_index_name, type="vectorSearch")
             )
             log.info("created vector index %s", settings.vector_index_name)
+        else:
+            paths = {f.get("path") for f in (current.get("latestDefinition") or {}).get("fields", [])}
+            if "embedding_model" not in paths:
+                await memories.update_search_index(settings.vector_index_name, definition)
+                log.info("updated vector index %s with an embedding_model filter", settings.vector_index_name)
     except Exception as e:  # plain mongod has no search support
         log.warning("Atlas Vector Search unavailable, using in-app cosine fallback: %s", e)
         return
