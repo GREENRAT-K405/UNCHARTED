@@ -9,22 +9,18 @@ import logging
 import math
 import re
 
+import httpx
 import numpy as np
 
 from .config import settings
 
 log = logging.getLogger("pehchaan.embeddings")
 
-_voyage = None
-if settings.voyage_api_key:
-    try:
-        import voyageai
+# Plain HTTP so the base URL is configurable: Voyage keys use api.voyageai.com, keys created in
+# MongoDB Atlas (Model API Keys) use ai.mongodb.com. Both speak the same embeddings API.
+_http = httpx.AsyncClient(timeout=30) if settings.voyage_api_key else None
 
-        _voyage = voyageai.AsyncClient(api_key=settings.voyage_api_key)
-    except Exception as e:  # pragma: no cover
-        log.warning("voyage client unavailable: %s", e)
-
-MODE = "voyage" if _voyage else "local"
+MODE = "voyage" if _http else "local"
 
 _STOP = set("a an the is are was were be to of in on at for and or with my your her his their our i you he she it this that".split())
 
@@ -56,11 +52,16 @@ def _local_embed(text: str) -> list[float]:
 async def embed(texts: list[str], input_type: str = "document") -> list[list[float]]:
     if not texts:
         return []
-    if _voyage:
+    if _http:
         try:
-            res = await _voyage.embed(texts, model=settings.voyage_model, input_type=input_type,
-                                      output_dimension=settings.embedding_dims)
-            return res.embeddings
+            res = await _http.post(
+                f"{settings.voyage_base_url.rstrip('/')}/embeddings",
+                headers={"Authorization": f"Bearer {settings.voyage_api_key}"},
+                json={"input": texts, "model": settings.voyage_model, "input_type": input_type,
+                      "output_dimension": settings.embedding_dims},
+            )
+            res.raise_for_status()
+            return [d["embedding"] for d in sorted(res.json()["data"], key=lambda d: d["index"])]
         except Exception as e:
             log.warning("voyage embed failed, falling back to local: %s", e)
     return [_local_embed(t) for t in texts]

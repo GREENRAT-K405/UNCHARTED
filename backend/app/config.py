@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     # hashed embedding of the same width is used so the pipeline still runs.
     voyage_api_key: str | None = None
     voyage_model: str = "voyage-3.5"
+    # Keys from dash.voyageai.com: https://api.voyageai.com/v1. Keys from Atlas Model API Keys: https://ai.mongodb.com/v1
+    voyage_base_url: str = "https://api.voyageai.com/v1"
     embedding_dims: int = 1024
 
     vector_index_name: str = "memory_vec"
