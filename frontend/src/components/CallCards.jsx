@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Avatar, Icon } from "./common.jsx";
-import { cardSentences, phrases } from "../lib/i18n.js";
+import { cardSentences, phrases, talkedWhen } from "../lib/i18n.js";
 
 /** Patient side. Expanded: the full "Who is this?" card. Collapsed: a small name tag at the bottom
  * edge of the video. Both say exactly what is read aloud: who, relation, at most one memory. */
@@ -31,6 +31,55 @@ export function WhoCard({ view, lang, expanded, fresh, onCollapse }) {
         {fresh && <div className="who-fresh">Updated just now</div>}
       </div>
     </div>
+  );
+}
+
+/** Patient side: a calm side panel about the person on the call. Who they are, what you talked about
+ * recently, what is always true. Visual only: nothing here is read aloud, and it never shows
+ * talking points, guardrails or the family's private notes. */
+export function AboutPanel({ about, lang, onClose }) {
+  if (!about?.who) return null;
+  const p = phrases(lang);
+  const { who } = about;
+  const photo = { name: who.full_name || who.name, photo: who.photo, color: who.color };
+  const empty = !about.always.length && !about.recent.length && !about.upcoming.length;
+  return (
+    <aside className="about-panel" aria-label={p.aboutBtn(who.name)}>
+      <button className="about-hide" onClick={onClose}>{p.aboutHide}</button>
+      <div className="about-who">
+        <Avatar contact={photo} size={96} />
+        <div className="about-name">{who.name}</div>
+        <div className="about-rel">{who.detail ? `${who.relation}, ${who.detail}` : who.relation}</div>
+      </div>
+
+      {about.also_here?.length > 0 && (
+        <section>
+          <h3>{p.aboutAlso}</h3>
+          <ul>{about.also_here.map((a) => <li key={a.id}><b>{a.name}</b>, {a.relation}</li>)}</ul>
+        </section>
+      )}
+      {about.recent.length > 0 && (
+        <section>
+          <h3>{p.aboutRecent}</h3>
+          <ul>{about.recent.map((r) => (
+            <li key={r.id}><span className="about-when">{talkedWhen(r.at, lang)}</span>{r.text}</li>
+          ))}</ul>
+        </section>
+      )}
+      {about.upcoming.length > 0 && (
+        <section>
+          <h3>{p.aboutUpcoming}</h3>
+          <ul>{about.upcoming.map((u) => <li key={u.id}>{u.text}</li>)}</ul>
+        </section>
+      )}
+      {about.always.length > 0 && (
+        <section>
+          <h3>{p.aboutAlways}</h3>
+          <ul>{about.always.map((a) => <li key={a.id}>{a.text}</li>)}</ul>
+        </section>
+      )}
+      {empty && <p className="about-empty">{p.aboutNothing}</p>}
+    </aside>
   );
 }
 

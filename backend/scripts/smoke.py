@@ -199,6 +199,16 @@ ok &= check("mumbai" not in text2 and "mumbai" not in chosen2, "brief no longer 
 ok &= check("surgery" not in text2 and "surgery" not in json.dumps(brief2).lower(), "private memory never surfaces")
 ok &= check(any("exam" in x.lower() for x in card2["suggestions"]), "brief suggests asking about the exam")
 ok &= check(bool(brief2["patient_card"]["who"].get("detail")), "after repeated asks the name tag adds identity detail")
+about = call("GET", f"/calls/{start2['call_id']}/about")
+about_text = json.dumps(about).lower()
+ok &= check(about["who"]["name"] == "Riya" and about["always"] and about["always"][0]["type"] == "relationship",
+            "About panel: who, then the permanent relationship first")
+ok &= check(bool(about["recent"]) and "you talked to" not in json.dumps(about["recent"]).lower(),
+            "About panel: recent talk comes from the previous call's recap")
+ok &= check("surgery" not in about_text and not ({"suggestions", "talking_points", "hints", "notes"} & about.keys()),
+            "About panel: no private memories, talking points or hints")
+ok &= check(all(a["type"] in ("relationship", "fact", "preference") for a in about["always"]),
+            "About panel: only lasting memory types in 'always'")
 ended2 = call("POST", f"/calls/{start2['call_id']}/end")["status"]
 ok &= check(ended2 == "cancelled" or call("GET", f"/calls/{start2['call_id']}")["status"] == "unanswered",
             "hanging up before anyone answers is recorded as cancelled (or unanswered), not as a call")

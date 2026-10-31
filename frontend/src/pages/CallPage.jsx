@@ -7,7 +7,7 @@ import { Peer } from "../lib/rtc.js";
 import { createTranscriber, speechSupported } from "../lib/speech.js";
 import { onSpeaking, speak, stopSpeaking } from "../lib/tts.js";
 import { Avatar } from "../components/common.jsx";
-import { RecallCard, RelativePanel, WhoCard } from "../components/CallCards.jsx";
+import { AboutPanel, RecallCard, RelativePanel, WhoCard } from "../components/CallCards.jsx";
 
 const CARD_MS = 20000; // the full card stays up this long, then collapses to the name tag
 const SPEAK_DELAY_MS = 2000; // don't talk over the first "hello"
@@ -61,6 +61,10 @@ export default function CallPage({ role }) {
   const [who, setWho] = useState(undefined); // name tag from the contact alone (undefined = loading)
   const [card, setCard] = useState(null); // patient_card from the brief (adds the memory line)
   const [alsoHere, setAlsoHere] = useState([]);
+  const [about, setAbout] = useState(null); // the "About them" side panel
+  const [aboutOpen, setAboutOpen] = useState(() => {
+    try { return localStorage.getItem("about-panel") !== "closed" && window.innerWidth > 900; } catch { return true; }
+  });
   const [expanded, setExpanded] = useState(false);
   const [fresh, setFresh] = useState(false);
   const [recall, setRecall] = useState(null);
@@ -130,6 +134,15 @@ export default function CallPage({ role }) {
       setCard(b.patient_card?.who ? b.patient_card : null);
       if (b.patient_card?.also_here) setAlsoHere(b.patient_card.also_here);
     }).catch(() => {});
+    loadAbout();
+  }
+  function loadAbout() {
+    if (!isPatient) return;
+    api.get(`/calls/${callId}/about`).then((a) => alive.current && setAbout(a.who ? a : null)).catch(() => {});
+  }
+  function toggleAbout(open) {
+    setAboutOpen(open);
+    try { localStorage.setItem("about-panel", open ? "open" : "closed"); } catch {}
   }
 
   // ---- setup: call info, media, signaling, transcription
@@ -212,6 +225,7 @@ export default function CallPage({ role }) {
             break;
           case "brief": // a caregiver edit rebuilt the brief: update silently, no re-read, no re-expand
             setCard(msg.brief.patient_card);
+            loadAbout();
             if (msg.brief.patient_card?.also_here) setAlsoHere(msg.brief.patient_card.also_here);
             setFresh(true);
             later("fresh", () => setFresh(false), 6000);
@@ -491,6 +505,9 @@ export default function CallPage({ role }) {
           {isPatient && remoteLive && view && (
             <button className="who-btn" onClick={() => openCard("button")}>{p.whoBtn}</button>
           )}
+          {isPatient && remoteLive && about && !aboutOpen && (
+            <button className="ctl" onClick={() => toggleAbout(true)}>{p.aboutBtn(about.who.name)}</button>
+          )}
         </div>
 
         {typeOpen && (
@@ -504,6 +521,9 @@ export default function CallPage({ role }) {
         <div className="conn-state">{connState !== "new" ? connState : ""}</div>
       </div>
 
+      {isPatient && remoteLive && aboutOpen && about && (
+        <AboutPanel about={about} lang={lang} onClose={() => toggleAbout(false)} />
+      )}
       {!isPatient && panelOpen && call && (
         <RelativePanel view={relView} patientName={call.patient.name}
           others={others} alsoHere={alsoIds} onAlsoHere={changeAlsoHere} onClose={() => setPanelOpen(false)}

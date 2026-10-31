@@ -39,6 +39,23 @@
 .recall-card svg { flex: none; color: var(--accent); margin-top: 2px; }
 @media (prefers-color-scheme: dark) { .recall-card { background: #2d2614; color: #fff4d6; } }
 
+/* ---------- the patient's "About them" panel: calm, large, never read aloud ---------- */
+.about-panel { width: 360px; flex: none; background: #fffaf2; color: #15120d; overflow: auto; padding: 18px 22px 28px; display: flex; flex-direction: column; gap: 22px; border-left: 2px solid #e4d9c8; position: relative; }
+@media (prefers-color-scheme: dark) { .about-panel { background: #16130f; color: #fff8ec; border-left-color: #3b342b; } }
+.about-hide { align-self: flex-end; background: none; border: 2px solid currentColor; color: inherit; opacity: 0.7; border-radius: 999px; padding: 4px 14px; font-size: 1rem; cursor: pointer; }
+.about-who { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.about-name { font-size: 2.2rem; font-weight: 700; line-height: 1.05; }
+.about-rel { font-size: 1.35rem; font-weight: 700; opacity: 0.8; }
+.about-panel section { border-top: 2px solid #e4d9c8; padding-top: 14px; }
+@media (prefers-color-scheme: dark) { .about-panel section { border-top-color: #3b342b; } }
+.about-panel h3 { margin: 0 0 8px; font-size: 1.05rem; text-transform: uppercase; letter-spacing: 0.05em; color: #1f5c4f; }
+@media (prefers-color-scheme: dark) { .about-panel h3 { color: #7fd0b8; } }
+.about-panel ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.about-panel li { font-size: 1.4rem; line-height: 1.35; }
+.about-when { display: block; font-size: 1rem; opacity: 0.7; font-weight: 700; }
+.about-empty { font-size: 1.2rem; opacity: 0.75; text-align: center; }
+@media (max-width: 900px) { .about-panel { width: 100%; max-height: 45vh; border-left: none; border-top: 2px solid #e4d9c8; } }
+
 /* ---------- the relative's panel ---------- */
 .rel-panel { width: 340px; flex: none; background: var(--paper); color: var(--ink); overflow: auto; padding: 16px 18px 24px; display: flex; flex-direction: column; gap: 16px; border-left: 1px solid #3a342c; }
 .rel-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; }

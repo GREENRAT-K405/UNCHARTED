@@ -9,6 +9,7 @@ family's hints (e.g. how to answer when the patient asks for someone who has die
 
 The stored brief and its score breakdown are unchanged; only presentation lives here.
 """
+import re
 from datetime import timedelta
 
 from bson import ObjectId
@@ -38,6 +39,15 @@ def you_text(text: str, patient_name: str) -> str:
     return text if text.endswith((".", "!", "?", "।")) else text + "."
 
 
+def recap_line(recap: str | None, name: str) -> str | None:
+    """'You just talked to Riya. Riya told you about Pune.' -> 'Riya told you about Pune.'"""
+    parts = [p.strip() for p in re.split(r"(?<=[.!?।])\s+", recap or "") if p.strip()]
+    rest = [p for p in parts if not re.match(r"^(?:you (?:just )?talked to\b|it was lovely to hear from them)", p, re.I)]
+    if len(rest) == len(parts) and len(parts) > 1 and name in parts[0]:
+        rest = parts[1:]  # other languages: the first sentence is the "you talked to ..." line
+    return rest[0] if rest else None
+
+
 async def identity_boosted(contact_id: ObjectId) -> bool:
     rel = await db.memories.find_one({"contact_id": contact_id, "type": "relationship", "status": "active"},
                                      {"identity_asks": 1, "last_identity_ask_at": 1})
@@ -50,9 +60,12 @@ async def who(contact: dict | None) -> dict | None:
     if not contact or contact.get("status") != "active":
         return None
     boosted = await identity_boosted(contact["_id"])
+    detail = (contact.get("relation_detail") or "").strip()
+    if detail and (contact.get("relation") or "").lower() in detail.lower():
+        detail = ""  # "your brother, Pratham's brother" says the same thing twice
     return {"contact_id": str(contact["_id"]), "name": known_as(contact), "full_name": contact["name"],
             "relation": your_relation(contact), "photo": contact.get("photo"), "color": contact.get("color"),
-            "detail": contact.get("relation_detail") if boosted else None}
+            "detail": detail or None if boosted else None}
 
 
 async def also_here(call: dict) -> list[dict]:
@@ -94,6 +107,46 @@ async def patient_card(brief: dict | None, contact: dict | None, patient: dict |
             "brief_id": str(brief["_id"]) if brief else None,
             "updated_at": brief["created_at"].isoformat() if brief else None,
             "language": lang.normalise((patient or {}).get("language"))}
+
+
+ABOUT_ALWAYS = ("relationship", "fact", "preference")  # lasting things; never constraints or sensitive notes
+ABOUT_UPCOMING = ("plan", "event")
+
+
+async def about_panel(patient: dict, contact: dict | None, call: dict | None = None) -> dict:
+    """The patient's side panel, read at a glance and never read aloud: who this is, what was
+    recently talked about, and what is permanently known about them. Only active, live,
+    patient-visible memories; never talking points, guardrails or the family's private notes."""
+    tag = await who(contact)
+    if tag is None:
+        return {"who": None, "always": [], "recent": [], "upcoming": [], "also_here": []}
+    pname = patient.get("name", "")
+    now = clock.now()
+
+    def visible(extra: dict) -> dict:
+        return {"owner_id": patient["_id"], "contact_id": contact["_id"], "status": "active",
+                "visibility": "patient", **extra}
+
+    always = [m async for m in db.memories.find(
+        visible({"type": {"$in": list(ABOUT_ALWAYS)}, "expires_at": {"$exists": False}}))]
+    # The relationship line first, then by importance: the lasting facts that matter most.
+    always.sort(key=lambda m: (m["type"] != "relationship", -m.get("importance", 0.5)))
+    upcoming = [m async for m in db.memories.find(visible({"type": {"$in": list(ABOUT_UPCOMING)}}))
+                .sort("created_at", -1).limit(8) if ms.is_live(m, now)]
+
+    calls = [c async for c in db.calls.find(
+        {"patient_id": patient["_id"], "contact_id": contact["_id"], "status": "processed",
+         "recap": {"$nin": [None, ""]}}).sort("started_at", -1).limit(3)]
+    recent = []
+    for c in calls:
+        line = recap_line(c["recap"], contact["name"])
+        if line:
+            recent.append({"id": str(c["_id"]), "text": you_text(line, pname), "at": c["started_at"].isoformat()})
+    return {"who": tag,
+            "always": [{"id": str(m["_id"]), "type": m["type"], "text": you_text(m["content"], pname)} for m in always[:6]],
+            "recent": recent,
+            "upcoming": [{"id": str(m["_id"]), "text": you_text(m["content"], pname)} for m in upcoming[:3]],
+            "also_here": await also_here(call) if call else []}
 
 
 async def relative_hints(owner_id: ObjectId, exclude_contact: ObjectId | None = None) -> list[dict]:

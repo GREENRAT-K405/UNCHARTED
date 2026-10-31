@@ -108,7 +108,11 @@ function SignInStep({ state, onPaired }) {
   useEffect(() => caregiverIdentity.onChange((cg) => {
     if (!cg || cg.anonymous) return;
     requestAs(caregiverIdentity, "GET", "/me").then((m) => {
-      const circle = m.circles.find((c) => c.role !== "viewer" && c.role !== "device");
+      // The circle the caregiver last had open on the dashboard, not just the first one they belong to.
+      const mine = m.circles.filter((c) => c.role !== "viewer" && c.role !== "device");
+      let saved = null;
+      try { saved = localStorage.getItem("cg-circle"); } catch {}
+      const circle = mine.find((c) => c.patient.id === saved) || mine[0];
       if (circle) setHelper({ name: m.name, patient: circle.patient });
     }).catch(() => {});
   }), []);

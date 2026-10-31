@@ -158,15 +158,6 @@ def contact_out(c: dict, caregiver: bool) -> dict:
     return out
 
 
-def recap_line(recap: str | None, name: str) -> str | None:
-    """'You just talked to Riya. Riya told you about Pune.' -> 'Riya told you about Pune.'"""
-    parts = [p.strip() for p in re.split(r"(?<=[.!?।])\s+", recap or "") if p.strip()]
-    rest = [p for p in parts if not re.match(r"^(?:you (?:just )?talked to\b|it was lovely to hear from them)", p, re.I)]
-    if len(rest) == len(parts) and len(parts) > 1 and name in parts[0]:
-        rest = parts[1:]  # other languages: the first sentence is the "you talked to ..." line
-    return rest[0] if rest else None
-
-
 async def _ensure_link_tokens(docs: list[dict]):
     for c in docs:
         if not c.get("link_token") and c.get("status") == "active":
@@ -316,7 +307,7 @@ async def contacts(pid: str, status: str = "active", p: Principal = Depends(auth
         if (u := accounts.get(c.get("user_id"))):
             o["account"] = {"email": u.get("email"), "name": u.get("name")}
         if (r := recaps.get(c["_id"])) and c.get("status") == "active":
-            line = recap_line(r["recap"], c["name"])
+            line = callcard.recap_line(r["recap"], c["name"])
             o["last_recap"] = {"text": callcard.you_text(line, pname) if line else None, "at": r["at"].isoformat()}
         out.append(o)
     return out
@@ -625,6 +616,16 @@ async def get_brief(call_id: str, p: Principal = Depends(auth.current)):
         return {"brief_id": None, "mode": None, "created_at": None,
                 "patient_card": {"who": None, "memory": None, "also_here": []}}
     return await brief_payload(await _call_brief(call), call)
+
+
+@app.get("/api/calls/{call_id}/about")
+async def get_about(call_id: str, p: Principal = Depends(auth.current)):
+    """The patient's "About them" side panel for whoever they are talking to."""
+    call = await get_or_404(db.calls, call_id, "call")
+    auth.require_access(p, call["patient_id"], allow_device=True)
+    patient = await db.users.find_one({"_id": call["patient_id"]})
+    contact = await db.contacts.find_one({"_id": call["contact_id"]}) if call.get("contact_id") else None
+    return await callcard.about_panel(patient, contact, call)
 
 
 async def _call_brief(call: dict, wait: float | None = None) -> dict | None:
