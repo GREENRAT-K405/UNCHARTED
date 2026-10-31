@@ -105,6 +105,7 @@
 .pair-lede { font-size: clamp(1.4rem, 3vw, 1.9rem); margin: 0; color: var(--ink-2); line-height: 1.4; }
 .pair-label { font-size: 1.4rem; color: var(--ink-2); margin-top: 8px; }
 .pair-code { font-family: var(--mono); font-size: clamp(3rem, 11vw, 6rem); font-weight: 600; letter-spacing: 0.08em; color: var(--brand); background: var(--brand-soft); border-radius: 24px; padding: 8px 32px; max-width: 100%; }
+.pair-now { text-decoration: none; display: inline-block; font-size: 1.3rem; padding: 16px 28px; }
 .pair-error { font-size: 1.3rem; color: var(--warn); }
 .pair-help { max-width: 640px; text-align: center; color: var(--ink-3); line-height: 1.5; }
 

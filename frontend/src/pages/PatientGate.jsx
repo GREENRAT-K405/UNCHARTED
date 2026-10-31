@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { api, requestAs, setIdentity } from "../lib/api.js";
 import { caregiverIdentity, deviceIdentity, friendlyError } from "../lib/identity.js";
 
@@ -13,6 +14,8 @@ export default function PatientGate({ children }) {
   const [helper, setHelper] = useState(null); // a caregiver signed in on this same browser
   const [pairing, setPairing] = useState(false);
   const poll = useRef(null);
+  const location = useLocation();
+  const [params, setParams] = useSearchParams();
 
   useEffect(() => {
     const off = deviceIdentity.onChange(async (u) => {
@@ -50,22 +53,30 @@ export default function PatientGate({ children }) {
     }
   }
 
-  // Offer one-tap pairing when a caregiver is already signed in on this browser.
+  // Offer one-tap pairing when a caregiver is already signed in on this browser. Subscribe rather
+  // than read .current: Firebase restores the caregiver session asynchronously after page load.
   useEffect(() => {
     if (state.status !== "pairing" || helper) return;
-    const cg = caregiverIdentity.current;
-    if (!cg || cg.anonymous) return;
-    requestAs(caregiverIdentity, "GET", "/me").then((m) => {
-      const circle = m.circles.find((c) => c.role !== "viewer");
-      if (circle) setHelper({ name: m.name, patient: circle.patient });
-    }).catch(() => {});
+    return caregiverIdentity.onChange((cg) => {
+      if (!cg || cg.anonymous) return;
+      requestAs(caregiverIdentity, "GET", "/me").then((m) => {
+        const circle = m.circles.find((c) => c.role !== "viewer");
+        if (circle) setHelper({ name: m.name, patient: circle.patient });
+      }).catch(() => {});
+    });
   }, [state.status]);
+
+  // Coming back from "set up this screen now": the family member just signed in for this, so pair at once.
+  useEffect(() => {
+    if (helper && state.code && !pairing && params.get("setup")) pairHere();
+  }, [helper, state.code]);
 
   async function pairHere() {
     setPairing(true);
     try {
       await requestAs(caregiverIdentity, "POST", `/circles/${helper.patient.id}/devices`,
         { code: state.code, label: `${helper.patient.name}'s screen` });
+      if (params.get("setup")) setParams({}, { replace: true });
       await check();
     } finally {
       setPairing(false);
@@ -88,10 +99,14 @@ export default function PatientGate({ children }) {
           </>
         )}
         {state.status === "error" && <p className="pair-error">We're having trouble connecting. We'll keep trying.</p>}
-        {helper && (
+        {helper ? (
           <button className="btn-big btn-primary" onClick={pairHere} disabled={pairing}>
             {pairing ? "Setting up…" : `I'm ${helper.name || "family"}: set this up for ${helper.patient.name}`}
           </button>
+        ) : state.status === "pairing" && (
+          <Link className="btn-big btn-primary pair-now" to={`/login?next=${encodeURIComponent(`${location.pathname}?setup=1`)}`}>
+            Family: set up this screen now
+          </Link>
         )}
       </div>
       <p className="pair-help">
