@@ -387,3 +387,12 @@ select:focus, .form input:focus, .form textarea:focus, .row input:focus, .search
 
 /* Phones: the caregiver's top bar scrolls away instead of taking a quarter of the screen. */
 @media (max-width: 760px) { .cg-top { position: static; padding: 14px 16px; } .cg-body { padding: 20px 16px 48px; } }
+
+/* ---------- touch, scrolling and safe areas ---------- */
+:root { color-scheme: light; }
+button, a, select, summary, [role="button"] { touch-action: manipulation; -webkit-tap-highlight-color: rgba(27, 84, 70, 0.14); }
+select { color: var(--ink); background-color: #fff; }
+.modal-backdrop, .modal, .overlay, .about-panel, .rel-panel, .who-card { overscroll-behavior: contain; }
+.emergency { bottom: calc(24px + env(safe-area-inset-bottom)); }
+.controls { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+.patient-shell { padding-left: max(clamp(16px, 4vw, 48px), env(safe-area-inset-left)); padding-right: max(clamp(16px, 4vw, 48px), env(safe-area-inset-right)); }

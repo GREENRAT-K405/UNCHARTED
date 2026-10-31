@@ -145,3 +145,5 @@
 .keep-link p { margin: 0; }
 .link-input { font-size: 1rem; padding: 12px 14px; }
 .family-avatar { background: #1f5c4f; color: #fff; }
+
+.family-corner { bottom: calc(14px + env(safe-area-inset-bottom)); left: calc(14px + env(safe-area-inset-left)); }
