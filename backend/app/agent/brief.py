@@ -116,7 +116,7 @@ async def build_brief(owner_id: ObjectId, contact: dict, call_id: ObjectId | Non
         }, indent=1)
         card = await llm.structured(BRIEF_SYSTEM, user, BRIEF_SCHEMA, effort="low", max_tokens=4000)
         if card is not None:
-            mode = "claude"
+            mode = llm.status["mode"]
     if card is None:
         patient = await db.users.find_one({"_id": owner_id}, {"name": 1})
         card = offline.brief(contact, view_items, last_calls, now, patient["name"] if patient else "")

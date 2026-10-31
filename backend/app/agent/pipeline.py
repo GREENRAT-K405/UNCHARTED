@@ -82,7 +82,7 @@ async def _extract(lines, contact, patient, existing, call_date) -> tuple[dict, 
     )
     result = await llm.structured(EXTRACT_SYSTEM, user, EXTRACT_SCHEMA, effort="medium")
     if result is not None:
-        return result, "claude"
+        return result, llm.status["mode"]
     return offline.extract(lines, contact, patient["name"], call_date), "offline"
 
 

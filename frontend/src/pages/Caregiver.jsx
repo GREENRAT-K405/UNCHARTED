@@ -148,7 +148,7 @@ function Dashboard() {
             <>
               <div><span className={`dot ${health.capabilities.change_streams ? "ok" : "warn"}`} /> Change streams</div>
               <div><span className={`dot ${health.capabilities.vector_search ? "ok" : "warn"}`} /> Vector search</div>
-              <div><span className={`dot ${health.llm.mode === "claude" ? "ok" : "warn"}`} /> Agent: {health.llm.mode}</div>
+              <div><span className={`dot ${health.llm.mode !== "offline" ? "ok" : "warn"}`} /> Agent: {health.llm.mode}</div>
               <div><span className={`dot ${health.embeddings === "voyage" ? "ok" : "warn"}`} /> Embeddings: {health.embeddings}</div>
               <div><span className={`dot ${health.auth === "firebase" ? "ok" : "warn"}`} /> Auth: {health.auth === "firebase" ? "Firebase" : "dev mode"}</div>
             </>

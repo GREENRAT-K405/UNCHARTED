@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 # Export .env into the process so SDKs that read os.environ (ANTHROPIC_API_KEY) see it too.
 load_dotenv(ENV_FILE)
-for _key in ("ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "FIREBASE_PROJECT_ID"):
+for _key in ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "VOYAGE_API_KEY", "FIREBASE_PROJECT_ID"):
     if os.environ.get(_key) == "":  # blank lines in .env must not shadow other credential sources
         del os.environ[_key]
 
@@ -19,10 +19,15 @@ class Settings(BaseSettings):
     mongodb_uri: str = "mongodb://localhost:27017/?directConnection=true"
     mongodb_db: str = "pehchaan"
 
-    # LLM (Claude). Credentials resolve from ANTHROPIC_API_KEY / ant auth profile.
+    # LLM. auto = Groq when GROQ_API_KEY is set, else Claude (ANTHROPIC_API_KEY / ant auth profile).
     # Set LLM_MODE=offline to force the rule-based fallback agent.
-    llm_mode: str = "auto"  # auto | claude | offline
+    llm_mode: str = "auto"  # auto | groq | claude | offline
     claude_model: str = "claude-opus-5-5"
+    groq_api_key: str | None = None
+    # gpt-oss models support Groq's strict JSON-schema output, which the agent relies on.
+    groq_model: str = "openai/gpt-oss-120b"
+    # Free tier allows 8000 tokens/minute including this reservation; keep prompt + this under it.
+    groq_max_tokens: int = 4000
 
     # Embeddings. voyage-3.5 -> 1024 dims. Without VOYAGE_API_KEY a local
     # hashed embedding of the same width is used so the pipeline still runs.
