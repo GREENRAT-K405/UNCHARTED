@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 # Export .env into the process so SDKs that read os.environ (ANTHROPIC_API_KEY) see it too.
 load_dotenv(ENV_FILE)
-for _key in ("ANTHROPIC_API_KEY", "VOYAGE_API_KEY"):
+for _key in ("ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "FIREBASE_PROJECT_ID"):
     if os.environ.get(_key) == "":  # blank lines in .env must not shadow other credential sources
         del os.environ[_key]
 
@@ -44,6 +44,17 @@ class Settings(BaseSettings):
 
     timezone: str = "Asia/Kolkata"
     public_base_url: str = "http://localhost:5173"
+
+    # Auth. With FIREBASE_PROJECT_ID set, every request must carry a Firebase ID token
+    # (Google / email sign-in for caregivers, anonymous sign-in for paired patient devices).
+    # Without it the server runs in "dev" auth mode and accepts unsigned dev tokens - local use only.
+    firebase_project_id: str | None = None
+    # Let any signed-in caregiver open the seeded demo family (handy for judges).
+    demo_open_to_all: bool = True
+
+    @property
+    def auth_mode(self) -> str:
+        return "firebase" if self.firebase_project_id else "dev"
 
     @property
     def tz(self) -> ZoneInfo:

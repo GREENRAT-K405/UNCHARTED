@@ -2,8 +2,10 @@
 
     python scripts/smoke.py [base_url]
 
-Resets demo data, places a call to Riya, sends a scripted transcript, ends the call,
-waits for the memory agent, then checks the guard, the next brief and the review queue.
+Signs in as a dev caregiver, opens the demo family, resets it, pairs a dev "tablet",
+then plays the demo: the tablet calls Riya, Riya (with the call's join token) speaks,
+the memory agent runs, and the guard, the next brief and the review queue are checked.
+Needs the backend in dev auth mode (no FIREBASE_PROJECT_ID).
 """
 import json
 import sys
@@ -14,10 +16,18 @@ from datetime import datetime
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000").rstrip("/") + "/api"
 
 
-def call(method, path, body=None):
+CAREGIVER = "dev:smoke-test|smoke@example.com|Smoke Test"
+TABLET = f"dev-anon:smoke-tablet-{int(time.time())}"
+token = CAREGIVER
+
+
+def call(method, path, body=None, as_=None):
+    headers = {"Content-Type": "application/json"}
+    tok = as_ if as_ is not None else token
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
     req = urllib.request.Request(BASE + path, method=method,
-                                 data=json.dumps(body).encode() if body is not None else None,
-                                 headers={"Content-Type": "application/json"})
+                                 data=json.dumps(body).encode() if body is not None else None, headers=headers)
     with urllib.request.urlopen(req, timeout=180) as r:
         return json.loads(r.read())
 
@@ -29,9 +39,14 @@ def check(cond, msg):
 
 ok = True
 health = call("GET", "/health")
-print("health:", json.dumps({k: health[k] for k in ("llm", "embeddings", "capabilities")}))
+print("health:", json.dumps({k: health[k] for k in ("auth", "llm", "embeddings", "capabilities")}))
+if health["auth"] != "dev":
+    sys.exit("smoke.py needs the backend in dev auth mode (unset FIREBASE_PROJECT_ID)")
+pid = call("POST", "/circles/demo")["id"]
 call("POST", "/demo/reset")
-pid = call("GET", "/patients")[0]["id"]
+code = call("POST", "/devices/pair-code", as_=TABLET)["code"]
+call("POST", f"/circles/{pid}/devices", {"code": code, "label": "Smoke tablet"})
+token = TABLET  # from here on, act as Aaji's tablet
 contacts = {c["name"]: c for c in call("GET", f"/patients/{pid}/contacts")}
 riya = contacts["Riya"]
 
@@ -39,6 +54,7 @@ print("\n1. first call")
 start = call("POST", "/calls", {"patient_id": pid, "contact_id": riya["id"]})
 ok &= check(start["allowed"], "call allowed")
 cid = start["call_id"]
+join_token = start["join_url"].split("?t=")[1]
 brief1 = call("GET", f"/calls/{cid}/brief")
 print("   brief:", brief1["card"]["headline"], "|", " / ".join(l["text"] for l in brief1["card"]["lines"]))
 script = [
@@ -50,8 +66,8 @@ script = [
     ("contact", "And Bruno says hello."),
     ("contact", "Papa, don't tell Aaji about Papa's surgery."),
 ]
-for speaker, text in script:
-    call("POST", f"/calls/{cid}/transcript", {"speaker": speaker, "text": text})
+for speaker, text in script:  # the tablet speaks for Aaji; Riya's lines carry her join token
+    call("POST", f"/calls/{cid}/transcript", {"text": text, "t": join_token if speaker == "contact" else None})
 call("POST", f"/calls/{cid}/end")
 
 print("\n2. memory agent")
@@ -68,7 +84,7 @@ actions = {a["action"] for a in c.get("agent", {}).get("actions", [])}
 ok &= check("SUPERSEDE" in actions, "Mumbai -> Pune superseded")
 ok &= check("CONFLICT" in actions, "patient's 'daughter' claim became a conflict")
 
-mems = call("GET", f"/memories?patient_id={pid}&contact_id={riya['id']}&status=active,pending_review,superseded")
+mems = call("GET", f"/memories?patient_id={pid}&contact_id={riya['id']}&status=active,pending_review,superseded", as_=CAREGIVER)
 ok &= check(any(m["status"] == "superseded" and "Mumbai" in m["content"] for m in mems), "Mumbai memory marked superseded")
 ok &= check(any(m["type"] == "event" and m.get("expires_at") for m in mems), "exam event has expires_at (TTL)")
 ok &= check(any(m["visibility"] == "never_surface" for m in mems), "surgery stored as never_surface")
@@ -84,7 +100,7 @@ exam = next(m for m in mems if m["type"] == "event" and m.get("event_date"))
 now = datetime.fromisoformat(call("GET", "/clock")["now"])
 days = (datetime.fromisoformat(exam["event_date"]) - now).total_seconds() / 86400 + 1
 print(f"   shifting demo clock +{days:.1f} days")
-call("POST", "/clock", {"shift_days": days})
+call("POST", "/clock", {"shift_days": days}, as_=CAREGIVER)
 start2 = call("POST", "/calls", {"patient_id": pid, "contact_id": riya["id"], "force": True})
 brief2 = call("GET", f"/calls/{start2['call_id']}/brief")
 text2 = json.dumps(brief2["card"]).lower()
@@ -94,10 +110,10 @@ ok &= check("mumbai" not in text2, "brief no longer says Mumbai")
 ok &= check("surgery" not in text2, "private memory never surfaces")
 ok &= check(any("exam" in x.lower() for x in brief2["card"]["suggestions"]), "brief suggests asking about the exam")
 call("POST", f"/calls/{start2['call_id']}/end")
-call("POST", "/clock", {"reset": True})
+call("POST", "/clock", {"reset": True}, as_=CAREGIVER)
 
 print("\n5. inspector")
-b = call("GET", f"/briefs/{brief2['brief_id']}")
+b = call("GET", f"/briefs/{brief2['brief_id']}", as_=CAREGIVER)
 top = [i for i in b["items"] if i["selected"]]
 ok &= check(all({"similarity", "recency", "importance", "trust", "final", "reason"} <= i.keys() for i in top),
             "brief items carry score breakdowns")

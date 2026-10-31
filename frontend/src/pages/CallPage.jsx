@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, openSocket } from "../lib/api.js";
+import { deviceIdentity } from "../lib/identity.js";
 import { Peer } from "../lib/rtc.js";
 import { createTranscriber, speechSupported } from "../lib/speech.js";
 import { speak, stopSpeaking } from "../lib/tts.js";
@@ -8,6 +9,8 @@ import { Avatar, BriefCard } from "../components/common.jsx";
 
 export default function CallPage({ role }) {
   const { callId } = useParams();
+  const [params] = useSearchParams();
+  const joinToken = params.get("t") || "";
   const nav = useNavigate();
   const [call, setCall] = useState(null);
   const [brief, setBrief] = useState(null);
@@ -42,7 +45,9 @@ export default function CallPage({ role }) {
   // ---- setup: call info, media, signaling, transcription
   useEffect(() => {
     let disposed = false;
-    api.get(`/calls/${callId}`).then((c) => !disposed && setCall(c));
+    if (isPatient) api.get(`/calls/${callId}`).then((c) => !disposed && setCall(c));
+    else api.get(`/calls/${callId}/receiver?t=${encodeURIComponent(joinToken)}`)
+      .then((r) => !disposed && setCall({ ...r.call, contact: r.contact, patient: r.patient }));
     if (isPatient) {
       api.get(`/calls/${callId}/brief`).then((b) => {
         if (disposed) return;
@@ -117,7 +122,9 @@ export default function CallPage({ role }) {
             if (msg.recap) setRecap(msg.recap);
             break;
         }
-      });
+      }, undefined, async () => (isPatient
+        ? { type: "auth", token: await deviceIdentity.getToken() }
+        : { type: "auth", join_token: joinToken }));
 
       const t = createTranscriber({
         onFinal: (text) => text && sock.current?.send({ type: "transcript", text }),
@@ -178,7 +185,7 @@ export default function CallPage({ role }) {
   }
 
   async function hangUp() {
-    await api.post(`/calls/${callId}/end`);
+    await api.post(`/calls/${callId}/end`, isPatient ? {} : { t: joinToken });
     setEnded(true);
   }
 

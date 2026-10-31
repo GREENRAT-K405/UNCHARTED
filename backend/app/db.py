@@ -20,11 +20,18 @@ transcript_chunks = db.transcript_chunks
 memories = db.memories
 briefs = db.briefs
 memory_events = db.memory_events
+# Auth & care circles. Firebase only proves identity; who may see which patient lives here.
+memberships = db.memberships  # caregiver user <-> patient, with a role
+devices = db.devices  # paired patient tablets (anonymous Firebase uid -> patient)
+pairing_codes = db.pairing_codes  # short-lived codes shown on an unpaired tablet (TTL)
+invites = db.invites  # family invite codes (TTL)
+auth_events = db.auth_events  # sign-ins, pairings, joins (TTL, 90 days)
 
 # Filled in by ensure_indexes(): tells the rest of the app which Atlas features work.
 capabilities = {"vector_search": False, "change_streams": False, "pre_images": False}
 
-COLLECTIONS = ["users", "contacts", "calls", "transcript_chunks", "memories", "briefs", "memory_events"]
+COLLECTIONS = ["users", "contacts", "calls", "transcript_chunks", "memories", "briefs", "memory_events",
+               "memberships", "devices", "pairing_codes", "invites", "auth_events"]
 
 
 async def ensure_indexes() -> None:
@@ -47,6 +54,20 @@ async def ensure_indexes() -> None:
     await transcript_chunks.create_index([("call_id", ASCENDING), ("ts", ASCENDING)])
     await briefs.create_index([("call_id", ASCENDING), ("created_at", DESCENDING)])
     await memory_events.create_index([("memory_id", ASCENDING), ("ts", ASCENDING)])
+    await memory_events.create_index([("owner_id", ASCENDING), ("ts", DESCENDING)])
+
+    await users.create_index("firebase_uid", unique=True, sparse=True)
+    await memberships.create_index([("patient_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
+    await memberships.create_index("user_id")
+    await devices.create_index("firebase_uid", unique=True)
+    await devices.create_index("patient_id")
+    await pairing_codes.create_index("code", unique=True)
+    await pairing_codes.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0, name="pairing_ttl")
+    await invites.create_index("code", unique=True)
+    await invites.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0, name="invite_ttl")
+    await auth_events.create_index([("patient_id", ASCENDING), ("ts", DESCENDING)])
+    await auth_events.create_index([("ts", ASCENDING)], expireAfterSeconds=90 * 24 * 3600, name="auth_events_ttl")
+    await calls.create_index([("patient_id", ASCENDING), ("started_at", DESCENDING)])
 
     # Pre-images let the dashboard show *what* expired when TTL deletes a memory.
     try:

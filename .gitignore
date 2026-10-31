@@ -5,3 +5,8 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+
+# Never commit credentials (Firebase Admin / Google service-account keys)
+*firebase-adminsdk*.json
+*service-account*.json
+*serviceAccount*.json

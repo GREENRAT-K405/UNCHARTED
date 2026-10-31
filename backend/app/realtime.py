@@ -113,9 +113,7 @@ class Hub:
             await self.to_caregivers(str(doc["owner_id"]), msg)
             if doc.get("contact_id"):
                 self.schedule_brief_refresh(str(doc["contact_id"]))
-        else:
-            for pid in list(self.caregivers):
-                await self.to_caregivers(pid, msg)
+        # Without a pre-image we can't tell whose memory it was, so we don't broadcast it at all.
 
     async def _fallback_memory_event(self, op: str, memory_id: ObjectId):
         doc = await db.memories.find_one({"_id": memory_id})
@@ -128,6 +126,7 @@ class Hub:
                     async for change in stream:
                         doc = change.get("fullDocument")
                         if doc:
+                            doc.pop("join_token", None)
                             await self.to_caregivers(str(doc["patient_id"]),
                                                      {"type": "call", "op": change["operationType"],
                                                       "call": ms.serialize(doc)})
@@ -141,7 +140,7 @@ class Hub:
         """Used only when change streams are unavailable."""
         if db.capabilities["change_streams"]:
             return
-        doc = await db.calls.find_one({"_id": call_id})
+        doc = await db.calls.find_one({"_id": call_id}, {"join_token": 0})
         if doc:
             await self.to_caregivers(str(doc["patient_id"]), {"type": "call", "op": "update", "call": ms.serialize(doc)})
 
