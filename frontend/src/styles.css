@@ -149,7 +149,7 @@ input:hover:not(:disabled), textarea:hover:not(:disabled), select:hover:not(:dis
 .stage { position: relative; flex: 1; overflow: hidden; }
 .remote { width: 100%; height: 100%; object-fit: cover; background: #000; }
 .local { position: absolute; right: 20px; top: 20px; width: min(240px, 28vw); aspect-ratio: 4 / 3; object-fit: cover; border-radius: 16px; border: 3px solid rgba(255, 255, 255, 0.8); transform: scaleX(-1); background: #222; z-index: 3; }
-.waiting { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: radial-gradient(circle at 50% 40%, #2c2721, #14120f); padding: 16px; text-align: center; }
+.waiting { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: #211d18; padding: 16px; text-align: center; }
 .waiting-text { font-size: clamp(1.6rem, 3.5vw, 2.4rem); font-weight: 700; }
 .invite { font-size: 0.95rem; color: #cfc6b8; max-width: 100%; overflow-wrap: anywhere; }
 .invite code { background: rgba(255, 255, 255, 0.08); padding: 2px 6px; border-radius: 6px; }
@@ -192,12 +192,17 @@ input:hover:not(:disabled), textarea:hover:not(:disabled), select:hover:not(:dis
 .off-banner { align-self: center; background: var(--warn); color: #fff; font-weight: 700; padding: 6px 16px; border-radius: 999px; }
 
 .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: center; padding: 16px; background: #1d1a16; }
-.ctl { background: #3a342c; color: #fff; border: none; padding: 14px 20px; border-radius: 14px; font-size: 1.05rem; font-weight: 700; }
+.ctl { background: #3a342c; color: #fff; border: none; min-height: 52px; padding: 12px 22px; border-radius: 14px; font-size: 1.05rem; font-weight: 700; transition: background-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
+.ctl:hover { background: #4a4238; }
+.ctl:active { transform: scale(0.97); }
 .ctl.on { background: #6d6253; }
 .ctl.warn { background: var(--warn); }
 .ctl.hang { background: var(--bad); }
-.who-btn { background: #ffd66b; color: #2a2100; border: none; font-size: 1.6rem; font-weight: 700; padding: 18px 32px; border-radius: 999px; box-shadow: 0 6px 24px rgba(255, 214, 107, 0.35); }
-.as-patient .ctl { font-size: 1.25rem; padding: 16px 24px; }
+.ctl.hang:hover { background: #9c2f2f; }
+.who-btn { background: var(--accent); color: var(--accent-ink); border: none; min-height: 64px; font-size: 1.5rem; font-weight: 700; padding: 14px 32px; border-radius: 999px; transition: background-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
+.who-btn:hover { background: #f0c560; }
+.who-btn:active { transform: scale(0.97); }
+.as-patient .ctl { font-size: 1.25rem; min-height: 60px; padding: 14px 24px; }
 .type-box { display: flex; gap: 8px; padding: 0 16px 16px; background: #1d1a16; flex-wrap: wrap; }
 .type-box input { flex: 1; min-width: 200px; padding: 12px 14px; border-radius: 12px; border: 1px solid #4a4339; background: #2a2620; color: #fff; }
 .stt-err { color: #f1b9b9; font-size: 0.85rem; align-self: center; }
