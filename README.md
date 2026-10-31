@@ -21,6 +21,9 @@ patient taps Riya ─► repeat-call guard (constraint memories) ─► pre-call
                                                             caregiver dashboard: review queue, inspector
 ```
 
+The full product and design spec (personas, data model, agent design, judging-criteria mapping, build plan) is in
+[docs/DESIGN.md](docs/DESIGN.md).
+
 ## Quick start
 
 Prerequisites: Python 3.11+, Node 18+, Chrome, and either Docker or a MongoDB Atlas cluster.
