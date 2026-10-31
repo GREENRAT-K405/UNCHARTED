@@ -54,10 +54,38 @@ cd frontend && npm install && npm run dev
 ```
 
 Open http://localhost:5173. The landing page links to the **patient screen** (`/patient`) and the **caregiver
-dashboard** (`/caregiver`). Demo data (Aaji, her son Rahul, granddaughter Riya, …) is seeded on first start. Use
-**Reset demo** on the dashboard to start over.
+dashboard** (`/caregiver`). On first start the backend seeds the demo family with six weeks of history. After signing
+in, choose **Explore the demo family** to open it. Use **Reset demo** on the dashboard to start over.
 
 For a single-port build, run `npm run build` in `frontend/`. FastAPI then serves `frontend/dist` on :8000.
+
+### Sign-in (Firebase Auth + MongoDB)
+
+Firebase only proves *who* someone is. Everything about *what they may see* lives in MongoDB: `users`,
+`memberships` (owner / family / viewer per patient), `devices`, `invites` and `pairing_codes` (both expire through TTL
+indexes), and an `auth_events` access log (TTL, 90 days).
+
+- **Caregivers** sign in with **Google** or email/password. New caregivers create a care circle, join one with an
+  8-letter invite code from an owner, or open the demo family.
+- **The patient never types a password.** Their tablet opens `/patient`, signs in anonymously, and shows a 6-digit
+  number in very large type. A caregiver enters it under **Family & devices → Pair a tablet** (or taps the one-click
+  button when signed in on the same browser). The tablet then stays signed in, and the caregiver can unpair it remotely
+  if it's lost. Unpaired or unpaired-again tablets show a calm "your family will set this up" screen, not an error.
+- **Family joining a call** need no account: each call's link carries an unguessable join token.
+- Every API route checks the caller's role for that patient. WebSockets authenticate with their first message, so
+  tokens never appear in URLs or logs. The tablet can place calls but can't open the memory inspector.
+
+To turn on Firebase (project `uncharted-d58fe`):
+
+1. Firebase Console → **Authentication → Sign-in method**: enable **Google**, **Email/Password** and **Anonymous**.
+2. Firebase Console → **Project settings → Your apps → Web app**: copy `apiKey` and `appId` into `frontend/.env`
+   (template: `frontend/.env.example`; project id and auth domain are already filled in).
+3. In `backend/.env`, set `FIREBASE_PROJECT_ID=uncharted-d58fe`. The backend needs only the project id; it verifies
+   tokens with Google's public certificates. **Don't put a service-account key in this repo.**
+4. Restart both servers. The login page warns if the frontend and backend disagree on the auth mode.
+
+Without Firebase config, both sides run in **dev auth mode**: the email form creates a local account with no password
+check. It's for local development only, and the backend logs a warning at startup.
 
 ### Two-laptop demo
 
@@ -133,11 +161,33 @@ Riya will visit Aaji on Sunday.").
   memory.
 - **App-logic lifecycle rules**: visibility flags, supersede chains, cascade delete when a contact is removed, hard
   "forget".
+- **Aggregation pipelines** (`app/stats.py`) power the caregiver Overview. One `$facet` over `calls` produces calls
+  per day and per hour (`$dateTrunc` / `$hour` in IST), who the patient talks to (`$lookup` into `contacts`), and totals
+  versus the previous period. A second `$facet` over `memories` produces the memory bank by type, upcoming events and
+  plans, and **recurring confusions** (the same mistaken patient belief grouped and counted). Activity uses
+  `memory_events` joined to memories.
+- **More TTL**: invite codes (7 days), device pairing codes (15 minutes), access log (90 days).
+
+### Demo family data (`app/seed.py`)
+
+The seeder writes six weeks of history for Aaji (Sunanda Patil, 74, Pune) through the real memory code, with the clock
+pinned to each moment:
+
+- 10 contacts, plus a pending "Ramesh" request (scam protection).
+- About 150 calls with transcripts. Transcripts older than 30 days are removed by TTL, as in production.
+- About 30 "paused" attempts by the repeat-call guard, clustered in the evening (sundowning).
+- About 80 memories, including supersede chains, patient-belief conflicts (one recurring three times), rejections,
+  low-confidence reviews, private notes, and upcoming events.
+- 30 real briefs with score breakdowns, the audit log, 4 family caregivers with roles, a paired tablet, and an access
+  log.
+
+Riya stays demo-safe: her caregiver notes are untouched and her last call was days ago.
 
 ## Demo script (~5 minutes)
 
-Setup: tab 1 is `/patient`, tab 2 is `/caregiver`. Riya's join link opens in a third window or on a second laptop.
-Before the call, the only memories about Riya are the caregiver's notes ("lives in Mumbai", "dog Bruno").
+Setup: tab 1 is `/patient` (pair it once from the dashboard), tab 2 is `/caregiver` (signed in, demo family open).
+Riya's join link opens in a third window or on a second laptop. Before the call, Riya's facts are the caregiver's notes
+("lives in Mumbai", "dog Bruno") plus a few older call memories.
 
 1. **First call.** Aaji taps Riya. The brief shows only caregiver basics. Riya (on her join link) says: *"Aaji, I moved
    to Pune last month. My physics exam is on Friday, and I'll visit you on Sunday!"* Aaji says: *"Riya is my daughter,
@@ -162,8 +212,8 @@ If the microphone or Wi-Fi misbehaves, use **Type instead** on either side.
 
 ### Headless check
 
-With the backend running, this command plays the whole demo through the API and asserts each beat (supersede, conflict,
-TTL fields, never-surface, guard, later brief, score breakdowns):
+With the backend running in dev auth mode, this command signs in, pairs a test tablet, plays the whole demo through
+the API, and asserts each beat (supersede, conflict, TTL fields, never-surface, guard, later brief, score breakdowns):
 
 ```bash
 cd backend && .venv/Scripts/python scripts/smoke.py
@@ -173,19 +223,27 @@ cd backend && .venv/Scripts/python scripts/smoke.py
 
 ```
 backend/app/
-  main.py            REST + WebSocket API
+  main.py            REST + WebSocket API (every route checks the caller's role)
+  auth.py            Firebase ID-token verification + care-circle authorization
+  routes_auth.py     session, care circles, invites, device pairing, access log
+  stats.py           caregiver insights via aggregation pipelines
   realtime.py        signaling relay, transcript fan-out, change-stream watchers
   db.py              collections, TTL / regular / vector indexes
   memory_store.py    memory docs, lifecycle helpers, audit log, vector search
   embeddings.py      Voyage or local embeddings
   llm.py             Claude structured-output wrapper
   agent/             pipeline (write path), brief (read path), guard, prompts, offline fallback
-  seed.py            demo family
+  seed.py            demo family: six weeks of history written through the real memory code
 frontend/src/
+  lib/identity.js    Firebase Auth (separate caregiver and tablet identities) or dev fallback
+  pages/Login        Google / email sign-in, invite links
+  pages/PatientGate  password-free tablet pairing with a large 6-digit code
   pages/PatientHome  big-photo grid, voice "Call my son", guard modal, emergency button
   pages/CallPage     WebRTC call, Who-is-this overlay, captions, off the record, recap
   pages/JoinPage     receiver consent screen
-  pages/caregiver/*  live feed, review queue, memory inspector, briefs, calls, contacts & rules
+  pages/caregiver/*  overview insights, review queue, memory inspector, briefs, calls, contacts & rules,
+                     family & devices, onboarding
+  components/charts  stacked columns, bar lists and stat tiles (validated colours, tooltips, table view)
 ```
 
 ## Ethics and safety

@@ -168,8 +168,10 @@ def brief(contact: dict, items: list[dict], last_calls: list[dict], now: datetim
         lines.append({"icon": "place" if "lives" in it["content"] else "star", "text": you(it["content"]) + ".",
                       "memory_ids": [it["id"]]})
     for it in items:
-        if it["type"] in ("preference", "topic") and len(suggestions) < 2:
-            suggestions.append(f"Tell me about {it['content'].replace(name + ' enjoys ', '')}")
+        m = re.search(r"\b(?:loves|enjoys|likes)\s+(.+)", it["content"]) if it["type"] == "preference" else None
+        if m and len(suggestions) < 2:
+            topic = re.sub(rf"\s+(?:with|for)\s+{re.escape(patient_name)}\b", "", m.group(1)) if patient_name else m.group(1)
+            suggestions.append(f"Shall we talk about {topic.rstrip('.')}?")
     lines = lines[:5]
     suggestions = suggestions[:2]
     speech = " ".join(l["text"] for l in lines[:3])

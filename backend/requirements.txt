@@ -9,3 +9,5 @@ voyageai>=0.3
 python-dotenv>=1.0
 numpy>=1.26
 tzdata>=2024.1
+google-auth>=2.29
+requests>=2.31

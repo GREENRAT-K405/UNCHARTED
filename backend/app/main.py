@@ -1,22 +1,26 @@
 import asyncio
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import clock, db, embeddings, llm
+from . import auth, clock, db, embeddings, llm
 from . import memory_store as ms
 from .agent import brief as brief_mod
 from .agent import guard, pipeline
+from .auth import Principal
 from .config import settings
 from .realtime import hub
-from .seed import seed
+from .routes_auth import router as auth_router
+from .seed import seed_demo
+from .stats import router as stats_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("pehchaan")
@@ -42,17 +46,22 @@ def spawn(coro) -> asyncio.Task:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.ensure_indexes()
-    if await db.users.count_documents({"role": "patient"}) == 0:
-        log.info("seeding demo data: %s", await seed())
+    if not await db.users.find_one({"role": "patient", "demo": True}):
+        log.info("seeding demo family: %s", await seed_demo())
     hub.refresh_brief = _refresh_brief
     await hub.start()
-    log.info("ready: llm=%s embeddings=%s capabilities=%s", llm.status["mode"], embeddings.MODE, db.capabilities)
+    log.info("ready: auth=%s llm=%s embeddings=%s capabilities=%s", settings.auth_mode, llm.status["mode"],
+             embeddings.MODE, db.capabilities)
+    if settings.auth_mode == "dev":
+        log.warning("AUTH IS IN DEV MODE (no FIREBASE_PROJECT_ID): unsigned dev tokens are accepted. Local use only.")
     yield
     await hub.stop()
 
 
 app = FastAPI(title="Pehchaan", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.include_router(auth_router)
+app.include_router(stats_router)
 
 
 # ---------------------------------------------------------------- helpers
@@ -61,6 +70,28 @@ async def get_or_404(coll, id_: str, what: str) -> dict:
     if not doc:
         raise HTTPException(404, f"{what} not found")
     return doc
+
+
+async def optional_principal(request: Request) -> Principal | None:
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("bearer "):
+        return None
+    return await auth.principal_from_token(header[7:])
+
+
+def join_url(call: dict) -> str:
+    return f"{settings.public_base_url}/join/{call['_id']}?t={call.get('join_token', '')}"
+
+
+def call_out(call: dict) -> dict:
+    out = ms.serialize({k: v for k, v in call.items() if k != "join_token"})
+    if call.get("status") in ("ringing", "active"):
+        out["join_url"] = join_url(call)
+    return out
+
+
+def check_join_token(call: dict, token: str | None) -> bool:
+    return bool(token) and bool(call.get("join_token")) and secrets.compare_digest(token, call["join_token"])
 
 
 def brief_payload(b: dict) -> dict:
@@ -75,7 +106,8 @@ async def _refresh_brief(call: dict) -> dict:
 # ---------------------------------------------------------------- system
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "llm": llm.status, "embeddings": embeddings.MODE, "capabilities": db.capabilities,
+    return {"ok": True, "auth": settings.auth_mode, "firebase_project_id": settings.firebase_project_id,
+            "llm": llm.status, "embeddings": embeddings.MODE, "capabilities": db.capabilities,
             "clock": {"now": clock.now().isoformat(), "offset_days": clock.offset_days()}}
 
 
@@ -90,7 +122,8 @@ async def get_clock():
 
 
 @app.post("/api/clock")
-async def set_clock(body: ClockIn):
+async def set_clock(body: ClockIn, p: Principal = Depends(auth.current)):
+    auth.require_caregiver(p)
     if body.reset:
         clock.reset()
     elif body.shift_days:
@@ -99,9 +132,14 @@ async def set_clock(body: ClockIn):
 
 
 @app.post("/api/demo/reset")
-async def demo_reset():
+async def demo_reset(p: Principal = Depends(auth.current)):
+    demo = await db.users.find_one({"role": "patient", "demo": True})
+    if not demo:
+        raise HTTPException(404, "no demo family")
+    auth.require_access(p, demo["_id"], role="owner")
     _off_record.clear()
-    return await seed(reset=True)
+    clock.reset()
+    return await seed_demo()
 
 
 class ExpiringIn(BaseModel):
@@ -112,28 +150,29 @@ class ExpiringIn(BaseModel):
 
 
 @app.post("/api/demo/expiring")
-async def demo_expiring(body: ExpiringIn):
-    """Seed a memory that MongoDB's TTL monitor will delete shortly (it runs about every 60 s)."""
-    patient = await get_or_404(db.users, body.patient_id, "patient")
-    contact = await db.contacts.find_one({"_id": ms.oid(body.contact_id)}) if body.contact_id else None
+async def demo_expiring(body: ExpiringIn, p: Principal = Depends(auth.current)):
+    """Add a memory that MongoDB's TTL monitor will delete shortly (it runs about every 60 s)."""
+    pid = auth.require_access(p, body.patient_id, role="family")
+    contact = await db.contacts.find_one({"_id": ms.oid(body.contact_id), "patient_id": pid}) if body.contact_id else None
     real_expiry = datetime.now(timezone.utc) + timedelta(seconds=body.seconds)
     mem = await ms.insert_memory(
-        owner_id=patient["_id"], contact_id=contact["_id"] if contact else None, type="plan",
+        owner_id=pid, contact_id=contact["_id"] if contact else None, type="plan",
         content=body.content or f"{contact['name'] if contact else 'Rahul'} will drop by with groceries in a few minutes",
         source={"kind": "caregiver", "origin": "caregiver"}, trust=1.0, importance=0.6,
-        event_date=clock.now(), expires_at=real_expiry, actor="caregiver")
+        event_date=clock.now(), expires_at=real_expiry, actor=p.display)
     return ms.serialize(mem)
 
 
 # ---------------------------------------------------------------- patients & contacts
 @app.get("/api/patients")
-async def patients():
-    return [ms.serialize(p) async for p in db.users.find({"role": "patient"})]
+async def patients(p: Principal = Depends(auth.current)):
+    return [ms.serialize(x) async for x in db.users.find({"_id": {"$in": p.patient_ids}, "role": "patient"})]
 
 
 @app.get("/api/patients/{pid}/contacts")
-async def contacts(pid: str, status: str = "active"):
-    q = {"patient_id": ms.oid(pid)}
+async def contacts(pid: str, status: str = "active", p: Principal = Depends(auth.current)):
+    patient_id = auth.require_access(p, pid, allow_device=True)
+    q: dict = {"patient_id": patient_id}
     if status != "all":
         q["status"] = {"$in": status.split(",")}
     return [ms.serialize(c) async for c in db.contacts.find(q).sort([("primary_caregiver", -1), ("created_at", 1)])]
@@ -152,24 +191,25 @@ class ContactIn(BaseModel):
 
 
 @app.post("/api/contacts")
-async def add_contact(body: ContactIn):
-    patient = await get_or_404(db.users, body.patient_id, "patient")
+async def add_contact(body: ContactIn, p: Principal = Depends(auth.current)):
+    pid = auth.require_access(p, body.patient_id, role="family")
+    patient = await db.users.find_one({"_id": pid})
     contact = {
-        "patient_id": patient["_id"], "name": body.name.strip(), "nicknames": body.nicknames,
+        "patient_id": pid, "name": body.name.strip(), "nicknames": body.nicknames,
         "relation": body.relation.strip().lower(), "relation_detail": body.relation_detail, "phone": body.phone,
         "photo": body.photo, "color": body.color or "#55606e", "status": "active", "primary_caregiver": False,
-        "created_at": clock.now(),
+        "created_at": clock.now(), "added_by": p.display,
     }
     contact["_id"] = (await db.contacts.insert_one(contact)).inserted_id
-    src = {"kind": "caregiver", "origin": "caregiver"}
+    src = {"kind": "caregiver", "origin": "caregiver", "by": p.display}
     rel = f"{contact['name']} is {patient['name']}'s {contact['relation']}" + (
         f" ({body.relation_detail})" if body.relation_detail else "")
-    await ms.insert_memory(owner_id=patient["_id"], contact_id=contact["_id"], type="relationship", content=rel,
-                           source=src, trust=1.0, importance=1.0, actor="caregiver")
+    await ms.insert_memory(owner_id=pid, contact_id=contact["_id"], type="relationship", content=rel,
+                           source=src, trust=1.0, importance=1.0, actor=p.display)
     for note in [n.strip() for n in body.notes if n.strip()]:
-        await ms.insert_memory(owner_id=patient["_id"], contact_id=contact["_id"], type="fact", content=note,
-                               source=src, trust=1.0, importance=0.6, actor="caregiver")
-    return {**ms.serialize(contact), "invite_url": f"{settings.public_base_url}/caregiver"}
+        await ms.insert_memory(owner_id=pid, contact_id=contact["_id"], type="fact", content=note,
+                               source=src, trust=1.0, importance=0.6, actor=p.display)
+    return ms.serialize(contact)
 
 
 class ContactRequestIn(BaseModel):
@@ -178,14 +218,14 @@ class ContactRequestIn(BaseModel):
 
 
 @app.post("/api/contacts/request")
-async def request_contact(body: ContactRequestIn):
-    """Patient-initiated new contact: pending until the caregiver approves (scam protection)."""
-    patient = await get_or_404(db.users, body.patient_id, "patient")
-    contact = {"patient_id": patient["_id"], "name": body.name.strip().title(), "nicknames": [], "relation": "unknown",
+async def request_contact(body: ContactRequestIn, p: Principal = Depends(auth.current)):
+    """Patient-initiated new contact: pending until a caregiver approves (scam protection)."""
+    pid = auth.require_access(p, body.patient_id, allow_device=True)
+    contact = {"patient_id": pid, "name": body.name.strip().title(), "nicknames": [], "relation": "unknown",
                "status": "pending", "photo": None, "color": "#8a8f98", "primary_caregiver": False,
                "created_at": clock.now(), "requested_by": "patient"}
     contact["_id"] = (await db.contacts.insert_one(contact)).inserted_id
-    await hub.to_caregivers(str(patient["_id"]), {"type": "contact_request", "contact": ms.serialize(contact)})
+    await hub.to_caregivers(str(pid), {"type": "contact_request", "contact": ms.serialize(contact)})
     return ms.serialize(contact)
 
 
@@ -199,30 +239,32 @@ class ContactPatch(BaseModel):
 
 
 @app.patch("/api/contacts/{cid}")
-async def patch_contact(cid: str, body: ContactPatch):
+async def patch_contact(cid: str, body: ContactPatch, p: Principal = Depends(auth.current)):
     contact = await get_or_404(db.contacts, cid, "contact")
+    pid = auth.require_access(p, contact["patient_id"], role="family")
     fields = body.model_dump(exclude_none=True)
     if fields:
         await db.contacts.update_one({"_id": contact["_id"]}, {"$set": fields})
     if body.relation and contact.get("status") == "pending":
-        patient = await db.users.find_one({"_id": contact["patient_id"]})
-        await ms.insert_memory(owner_id=patient["_id"], contact_id=contact["_id"], type="relationship",
+        patient = await db.users.find_one({"_id": pid})
+        await ms.insert_memory(owner_id=pid, contact_id=contact["_id"], type="relationship",
                                content=f"{contact['name']} is {patient['name']}'s {body.relation}",
-                               source={"kind": "caregiver", "origin": "caregiver"}, trust=1.0, importance=1.0,
-                               actor="caregiver")
+                               source={"kind": "caregiver", "origin": "caregiver", "by": p.display}, trust=1.0,
+                               importance=1.0, actor=p.display)
     return ms.serialize(await db.contacts.find_one({"_id": contact["_id"]}))
 
 
 @app.delete("/api/contacts/{cid}")
-async def delete_contact(cid: str, mode: str = "delete"):
+async def delete_contact(cid: str, mode: str = "delete", p: Principal = Depends(auth.current)):
     contact = await get_or_404(db.contacts, cid, "contact")
+    auth.require_access(p, contact["patient_id"], role="family")
     if mode == "archive":
         await db.contacts.update_one({"_id": contact["_id"]}, {"$set": {"status": "archived"}})
         return {"archived": True}
     # Cascade: forgetting a person forgets every memory about them (event log keeps ids only).
     removed = 0
     async for m in db.memories.find({"contact_id": contact["_id"]}):
-        await ms.forget(m, "caregiver")
+        await ms.forget(m, p.display)
         removed += 1
     await db.contacts.delete_one({"_id": contact["_id"]})
     return {"deleted": True, "memories_removed": removed}
@@ -237,49 +279,60 @@ class CallIn(BaseModel):
 
 
 @app.post("/api/calls")
-async def start_call(body: CallIn):
-    patient = await get_or_404(db.users, body.patient_id, "patient")
+async def start_call(body: CallIn, p: Principal = Depends(auth.current)):
+    pid = auth.require_access(p, body.patient_id, allow_device=True)
     contact = await get_or_404(db.contacts, body.contact_id, "contact")
+    if contact["patient_id"] != pid:
+        raise HTTPException(404, "contact not found")
     if contact.get("status") != "active":
         return {"allowed": False, "can_override": False,
-                "message": f"{contact['name']} is not in your family list yet. Ask Rahul first."}
+                "message": f"{contact['name']} is not in your family list yet. Your family will check first."}
 
-    check = await guard.check(patient["_id"], contact)
+    check = await guard.check(pid, contact)
+    now = clock.now()
     if not body.emergency and not check["allowed"] and not (body.force and check["can_override"]):
+        # Kept as a "blocked" attempt: caregivers see when and how often the guard steps in.
+        await db.calls.insert_one({"patient_id": pid, "contact_id": contact["_id"], "status": "blocked",
+                                   "started_at": now, "initiated_by": "patient", "guard": check})
         return check
 
-    now = clock.now()
-    call = {"patient_id": patient["_id"], "contact_id": contact["_id"], "status": "ringing", "started_at": now,
-            "initiated_by": "patient", "emergency": body.emergency, "guard": check if not check["allowed"] else None,
-            "off_record": False}
+    call = {"patient_id": pid, "contact_id": contact["_id"], "status": "ringing", "started_at": now,
+            "initiated_by": "patient" if p.kind == "device" else p.display, "emergency": body.emergency,
+            "guard": check if not check["allowed"] else None, "off_record": False,
+            "join_token": secrets.token_urlsafe(18)}
     call["_id"] = (await db.calls.insert_one(call)).inserted_id
     await hub.call_changed(call["_id"])
-    _brief_tasks[str(call["_id"])] = spawn(brief_mod.build_brief(patient["_id"], contact, call["_id"]))
-    return {"allowed": True, "call_id": str(call["_id"]),
-            "join_url": f"{settings.public_base_url}/join/{call['_id']}", "overrode": not check["allowed"]}
+    _brief_tasks[str(call["_id"])] = spawn(brief_mod.build_brief(pid, contact, call["_id"]))
+    return {"allowed": True, "call_id": str(call["_id"]), "join_url": join_url(call),
+            "overrode": not check["allowed"]}
 
 
 @app.get("/api/calls")
-async def list_calls(patient_id: str, limit: int = 30):
-    names = {c["_id"]: c["name"] async for c in db.contacts.find({"patient_id": ms.oid(patient_id)})}
+async def list_calls(patient_id: str, limit: int = 40, include_blocked: bool = True, p: Principal = Depends(auth.current)):
+    pid = auth.require_access(p, patient_id)
+    names = {c["_id"]: c["name"] async for c in db.contacts.find({"patient_id": pid})}
+    q: dict = {"patient_id": pid}
+    if not include_blocked:
+        q["status"] = {"$ne": "blocked"}
     out = []
-    async for c in db.calls.find({"patient_id": ms.oid(patient_id)}).sort("started_at", -1).limit(limit):
-        out.append({**ms.serialize(c), "contact_name": names.get(c["contact_id"], "?")})
+    async for c in db.calls.find(q).sort("started_at", -1).limit(min(limit, 300)):
+        out.append({**call_out(c), "contact_name": names.get(c["contact_id"], "?")})
     return out
 
 
 @app.get("/api/calls/{call_id}")
-async def get_call(call_id: str):
+async def get_call(call_id: str, p: Principal = Depends(auth.current)):
     call = await get_or_404(db.calls, call_id, "call")
+    auth.require_access(p, call["patient_id"], allow_device=True)
     contact = await db.contacts.find_one({"_id": call["contact_id"]})
     patient = await db.users.find_one({"_id": call["patient_id"]})
-    return {**ms.serialize(call), "contact": ms.serialize(contact), "patient": ms.serialize(patient),
-            "join_url": f"{settings.public_base_url}/join/{call['_id']}"}
+    return {**call_out(call), "contact": ms.serialize(contact), "patient": ms.serialize(patient)}
 
 
 @app.get("/api/calls/{call_id}/brief")
-async def get_brief(call_id: str):
+async def get_brief(call_id: str, p: Principal = Depends(auth.current)):
     call = await get_or_404(db.calls, call_id, "call")
+    auth.require_access(p, call["patient_id"], allow_device=True)
     task = _brief_tasks.get(call_id)
     if task and not task.done():
         await asyncio.shield(task)
@@ -291,23 +344,27 @@ async def get_brief(call_id: str):
 
 
 @app.get("/api/calls/{call_id}/receiver")
-async def receiver_info(call_id: str):
+async def receiver_info(call_id: str, t: str | None = None):
+    """For the family member joining from a link: needs the call's join token, no account."""
     call = await get_or_404(db.calls, call_id, "call")
+    if not check_join_token(call, t):
+        raise HTTPException(403, "This call link is not valid.")
     contact = await db.contacts.find_one({"_id": call["contact_id"]})
     patient = await db.users.find_one({"_id": call["patient_id"]})
-    return {"call": ms.serialize(call), "contact": ms.serialize(contact), "patient": ms.serialize(patient),
-            "notes": await brief_mod.receiver_note(patient["_id"], contact)}
+    return {"call": call_out(call), "contact": ms.serialize(contact),
+            "patient": {"name": patient["name"]}, "notes": await brief_mod.receiver_note(patient["_id"], contact)}
 
 
 @app.get("/api/calls/{call_id}/transcript")
-async def get_transcript(call_id: str):
+async def get_transcript(call_id: str, p: Principal = Depends(auth.current)):
     call = await get_or_404(db.calls, call_id, "call")
+    auth.require_access(p, call["patient_id"])
     return [ms.serialize(c) async for c in db.transcript_chunks.find({"call_id": call["_id"]}).sort("ts", 1)]
 
 
 class ChunkIn(BaseModel):
-    speaker: str
     text: str
+    t: str | None = None  # join token -> the text is from the contact
 
 
 async def save_chunk(call_id: str, speaker: str, text: str) -> dict | None:
@@ -329,14 +386,31 @@ async def save_chunk(call_id: str, speaker: str, text: str) -> dict | None:
 
 
 @app.post("/api/calls/{call_id}/transcript")
-async def post_chunk(call_id: str, body: ChunkIn):
-    await get_or_404(db.calls, call_id, "call")
-    return {"saved": await save_chunk(call_id, body.speaker, body.text) is not None}
+async def post_chunk(call_id: str, body: ChunkIn, request: Request):
+    call = await get_or_404(db.calls, call_id, "call")
+    if check_join_token(call, body.t):
+        speaker = "contact"
+    else:
+        p = await optional_principal(request)
+        if p is None:
+            raise HTTPException(401, "sign in required")
+        auth.require_access(p, call["patient_id"], allow_device=True)
+        speaker = "patient"
+    return {"saved": await save_chunk(call_id, speaker, body.text) is not None}
+
+
+class EndIn(BaseModel):
+    t: str | None = None
 
 
 @app.post("/api/calls/{call_id}/end")
-async def end_call(call_id: str):
+async def end_call(call_id: str, request: Request, body: EndIn | None = None):
     call = await get_or_404(db.calls, call_id, "call")
+    if not check_join_token(call, body.t if body else None):
+        p = await optional_principal(request)
+        if p is None:
+            raise HTTPException(401, "sign in required")
+        auth.require_access(p, call["patient_id"], allow_device=True)
     if call["status"] in ("ringing", "active"):
         now = clock.now()
         await db.calls.update_one({"_id": call["_id"]}, {"$set": {
@@ -360,20 +434,23 @@ async def _process(call_oid):
 
 
 @app.post("/api/calls/{call_id}/reprocess")
-async def reprocess(call_id: str):
+async def reprocess(call_id: str, p: Principal = Depends(auth.current)):
     call = await get_or_404(db.calls, call_id, "call")
+    auth.require_access(p, call["patient_id"], role="family")
     return await pipeline.process_call(call["_id"])
 
 
 # ---------------------------------------------------------------- memories
 @app.get("/api/memories")
 async def list_memories(patient_id: str, contact_id: str | None = None, status: str | None = None,
-                        type: str | None = None, visibility: str | None = None, q: str | None = None):
-    owner = ms.oid(patient_id)
+                        type: str | None = None, visibility: str | None = None, q: str | None = None,
+                        p: Principal = Depends(auth.current)):
+    owner = auth.require_access(p, patient_id)
     if q:
         vec = await embeddings.embed_one(q, "query")
         statuses = tuple(status.split(",")) if status else ("active", "pending_review", "superseded", "rejected")
-        hits = await ms.search(owner, ms.oid(contact_id) if contact_id else None, vec, limit=20, statuses=statuses)
+        hits = await ms.search(owner, ms.oid(contact_id) if contact_id and contact_id != "none" else None, vec,
+                               limit=20, statuses=statuses)
         return [{**ms.serialize(d), "score": round(s, 3)} for d, s in hits]
     query: dict = {"owner_id": owner}
     if contact_id:
@@ -390,8 +467,9 @@ async def list_memories(patient_id: str, contact_id: str | None = None, status: 
 
 
 @app.get("/api/memories/{mid}")
-async def memory_detail(mid: str):
+async def memory_detail(mid: str, p: Principal = Depends(auth.current)):
     mem = await get_or_404(db.memories, mid, "memory")
+    auth.require_access(p, mem["owner_id"])
     chain_back, cur = [], mem
     while cur.get("supersedes"):
         cur = await db.memories.find_one({"_id": cur["supersedes"]}, {"embedding": 0})
@@ -434,10 +512,10 @@ class MemoryIn(BaseModel):
 
 
 @app.post("/api/memories")
-async def add_memory(body: MemoryIn):
+async def add_memory(body: MemoryIn, p: Principal = Depends(auth.current)):
+    pid = auth.require_access(p, body.patient_id, role="family")
     if body.type not in ms.MEMORY_TYPES:
         raise HTTPException(400, "unknown memory type")
-    patient = await get_or_404(db.users, body.patient_id, "patient")
     event_date = pipeline._parse_date(body.event_date)
     expires_at = None
     if body.expires_in_days:
@@ -450,10 +528,10 @@ async def add_memory(body: MemoryIn):
     elif body.type == "constraint":
         visibility = "caregiver_only"
     mem = await ms.insert_memory(
-        owner_id=patient["_id"], contact_id=ms.oid(body.contact_id) if body.contact_id else None, type=body.type,
-        content=body.content.strip(), source={"kind": "caregiver", "origin": "caregiver"}, trust=1.0,
+        owner_id=pid, contact_id=ms.oid(body.contact_id) if body.contact_id else None, type=body.type,
+        content=body.content.strip(), source={"kind": "caregiver", "origin": "caregiver", "by": p.display}, trust=1.0,
         importance=body.importance, visibility=visibility, rule=body.rule, event_date=event_date,
-        expires_at=expires_at, actor="caregiver")
+        expires_at=expires_at, actor=p.display)
     return ms.serialize(mem)
 
 
@@ -465,16 +543,17 @@ class MemoryPatch(BaseModel):
 
 
 @app.patch("/api/memories/{mid}")
-async def patch_memory(mid: str, body: MemoryPatch):
+async def patch_memory(mid: str, body: MemoryPatch, p: Principal = Depends(auth.current)):
     mem = await get_or_404(db.memories, mid, "memory")
+    auth.require_access(p, mem["owner_id"], role="family")
+    who = p.display
     if body.content is not None and body.content.strip() != mem["content"]:
         # A caregiver correction becomes ground truth.
-        await ms.update_content(mem, body.content.strip(), "caregiver",
-                                {"trust": 1.0, "source.corrected_by": "caregiver"})
+        await ms.update_content(mem, body.content.strip(), who, {"trust": 1.0, "source.corrected_by": who})
     if body.visibility and body.visibility != mem.get("visibility"):
-        await ms.set_fields(mem, {"visibility": body.visibility}, f"visibility:{body.visibility}", "caregiver")
+        await ms.set_fields(mem, {"visibility": body.visibility}, f"visibility:{body.visibility}", who)
     if body.importance is not None:
-        await ms.set_fields(mem, {"importance": max(0.0, min(1.0, body.importance))}, "reweighted", "caregiver")
+        await ms.set_fields(mem, {"importance": max(0.0, min(1.0, body.importance))}, "reweighted", who)
     if body.action == "approve":
         fields = {"status": "active", "trust": 1.0}
         # Once a caregiver vouches for it, it may be shown, unless they chose a visibility explicitly.
@@ -487,66 +566,94 @@ async def patch_memory(mid: str, body: MemoryPatch):
             target = await db.memories.find_one({"_id": mem["conflicts_with"]})
             fields["supersedes"] = mem["conflicts_with"]
             if target and target["status"] == "active":
-                await ms.supersede(target, mem["_id"], actor="caregiver")
-        await ms.set_fields(mem, fields, "approved", "caregiver")
+                await ms.supersede(target, mem["_id"], actor=who)
+        await ms.set_fields(mem, fields, "approved", who)
     elif body.action == "reject":
-        await ms.set_fields(mem, {"status": "rejected", "visibility": "caregiver_only"}, "rejected", "caregiver")
+        await ms.set_fields(mem, {"status": "rejected", "visibility": "caregiver_only"}, "rejected", who)
     return ms.serialize(await db.memories.find_one({"_id": mem["_id"]}, {"embedding": 0}))
 
 
 @app.delete("/api/memories/{mid}")
-async def delete_memory(mid: str):
+async def delete_memory(mid: str, p: Principal = Depends(auth.current)):
     mem = await get_or_404(db.memories, mid, "memory")
-    await ms.forget(mem, "caregiver")
+    auth.require_access(p, mem["owner_id"], role="family")
+    await ms.forget(mem, p.display)
     return {"deleted": True}
 
 
 class FeedbackIn(BaseModel):
     helpful: bool
-    by: str = "patient"
 
 
 @app.post("/api/memories/{mid}/feedback")
-async def memory_feedback(mid: str, body: FeedbackIn):
+async def memory_feedback(mid: str, body: FeedbackIn, p: Principal = Depends(auth.current)):
     """Learned strategy: feedback re-weights importance so the item ranks differently next brief."""
     mem = await get_or_404(db.memories, mid, "memory")
+    auth.require_access(p, mem["owner_id"], allow_device=True)
     key = "feedback.helpful" if body.helpful else "feedback.not_helpful"
     delta = 0.05 if body.helpful else -0.1
     new_imp = max(0.0, min(1.0, mem.get("importance", 0.5) + delta))
     await db.memories.update_one({"_id": mem["_id"]}, {"$inc": {key: 1}, "$set": {"importance": new_imp}})
-    await ms.log_event(mem["_id"], "feedback:helpful" if body.helpful else "feedback:not_helpful", mem["owner_id"], body.by)
+    by = "patient" if p.kind == "device" else p.display
+    await ms.log_event(mem["_id"], "feedback:helpful" if body.helpful else "feedback:not_helpful", mem["owner_id"], by)
     return {"importance": new_imp}
 
 
 # ---------------------------------------------------------------- briefs
 @app.get("/api/briefs")
-async def list_briefs(patient_id: str, contact_id: str | None = None, limit: int = 20):
-    q = {"owner_id": ms.oid(patient_id)}
+async def list_briefs(patient_id: str, contact_id: str | None = None, limit: int = 30,
+                      p: Principal = Depends(auth.current)):
+    q: dict = {"owner_id": auth.require_access(p, patient_id)}
     if contact_id:
         q["contact_id"] = ms.oid(contact_id)
-    return [ms.serialize(b) async for b in db.briefs.find(q).sort("created_at", -1).limit(limit)]
+    return [ms.serialize(b) async for b in db.briefs.find(q).sort("created_at", -1).limit(min(limit, 100))]
 
 
 @app.get("/api/briefs/{bid}")
-async def get_brief_doc(bid: str):
-    return ms.serialize(await get_or_404(db.briefs, bid, "brief"))
+async def get_brief_doc(bid: str, p: Principal = Depends(auth.current)):
+    b = await get_or_404(db.briefs, bid, "brief")
+    auth.require_access(p, b["owner_id"])
+    return ms.serialize(b)
 
 
 @app.post("/api/contacts/{cid}/preview-brief")
-async def preview_brief(cid: str):
+async def preview_brief(cid: str, p: Principal = Depends(auth.current)):
     """Caregiver preview: what would the patient see if they called this person now?"""
     contact = await get_or_404(db.contacts, cid, "contact")
+    auth.require_access(p, contact["patient_id"])
     return ms.serialize(await brief_mod.build_brief(contact["patient_id"], contact, None))
 
 
 # ---------------------------------------------------------------- websockets
+async def _ws_auth(ws: WebSocket) -> dict | None:
+    """First frame must be {"type": "auth", "token": ...} or {"type": "auth", "join_token": ...}.
+    Keeps tokens out of URLs (and therefore out of access logs)."""
+    try:
+        msg = await asyncio.wait_for(ws.receive_json(), timeout=10)
+    except Exception:
+        return None
+    return msg if msg.get("type") == "auth" else None
+
+
 @app.websocket("/ws/call/{call_id}")
 async def ws_call(ws: WebSocket, call_id: str, role: str = "patient"):
     await ws.accept()
     call = await db.calls.find_one({"_id": ms.oid(call_id)}) if ms.oid(call_id) else None
-    if not call or role not in ("patient", "contact"):
+    hello = await _ws_auth(ws)
+    if not call or role not in ("patient", "contact") or not hello:
         await ws.close(code=4404)
         return
+    try:
+        if role == "contact":
+            if not check_join_token(call, hello.get("join_token")):
+                raise HTTPException(403)
+        else:
+            p = await auth.principal_from_token(hello.get("token"))
+            auth.require_access(p, call["patient_id"], allow_device=True)
+    except HTTPException:
+        await ws.close(code=4403)
+        return
+
     room = hub.rooms[call_id]
     previous = room.get(role)
     if previous is not None:
@@ -574,7 +681,7 @@ async def ws_call(ws: WebSocket, call_id: str, role: str = "patient"):
                 await save_chunk(call_id, role, msg.get("text", ""))
             elif kind == "interim":
                 await hub.to_room(call_id, {"type": "interim", "speaker": role, "text": msg.get("text", "")}, exclude=role)
-            elif kind == "off_record":
+            elif kind == "off_record" and role == "contact":
                 _off_record[call_id] = bool(msg.get("value"))
                 await db.calls.update_one({"_id": call["_id"]}, {"$set": {"off_record": _off_record[call_id]}})
                 await hub.to_room(call_id, {"type": "off_record", "value": _off_record[call_id], "by": role})
@@ -593,6 +700,15 @@ async def ws_call(ws: WebSocket, call_id: str, role: str = "patient"):
 @app.websocket("/ws/caregiver/{patient_id}")
 async def ws_caregiver(ws: WebSocket, patient_id: str):
     await ws.accept()
+    hello = await _ws_auth(ws)
+    try:
+        if not hello:
+            raise HTTPException(401)
+        p = await auth.principal_from_token(hello.get("token"))
+        auth.require_access(p, patient_id)
+    except HTTPException:
+        await ws.close(code=4403)
+        return
     hub.caregivers[patient_id].add(ws)
     await ws.send_json({"type": "welcome", "change_streams": db.capabilities["change_streams"]})
     try:

@@ -39,11 +39,11 @@ async def check(owner_id: ObjectId, contact: dict) -> dict:
         "$or": [{"contact_id": cid}, {"contact_id": None}]})]
     rules = [r for r in rules if ms.is_live(r, now)]
 
-    last = await db.calls.find_one({"patient_id": owner_id, "contact_id": cid, "status": {"$ne": "cancelled"}},
+    last = await db.calls.find_one({"patient_id": owner_id, "contact_id": cid, "status": {"$nin": ["cancelled", "blocked"]}},
                                    sort=[("started_at", -1)])
     day_start = datetime.combine(local.date(), time(0), tzinfo=settings.tz)
     today_count = await db.calls.count_documents({
-        "patient_id": owner_id, "contact_id": cid, "status": {"$ne": "cancelled"}, "started_at": {"$gte": day_start}})
+        "patient_id": owner_id, "contact_id": cid, "status": {"$nin": ["cancelled", "blocked"]}, "started_at": {"$gte": day_start}})
 
     # The most relevant upcoming plan, to reassure rather than just refuse.
     plan = await db.memories.find_one({

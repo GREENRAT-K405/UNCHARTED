@@ -83,6 +83,7 @@ async def insert_memory(
     rule: dict | None = None,
     conflicts_with: ObjectId | None = None,
     actor: str = "agent",
+    embedding: list[float] | None = None,
 ) -> dict:
     now = clock.now()
     doc = {
@@ -90,7 +91,7 @@ async def insert_memory(
         "contact_id": contact_id,
         "type": type,
         "content": content,
-        "embedding": await embeddings.embed_one(content),
+        "embedding": embedding if embedding is not None else await embeddings.embed_one(content),
         "source": source,
         "trust": round(trust, 2),
         "confidence": round(confidence, 2),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, getPatient } from "../lib/api.js";
+import { api } from "../lib/api.js";
 import { listenOnce, speechSupported } from "../lib/speech.js";
 import { speak } from "../lib/tts.js";
 import { Avatar } from "../components/common.jsx";
@@ -23,9 +23,8 @@ function greeting() {
   return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 }
 
-export default function PatientHome() {
+export default function PatientHome({ patient }) {
   const nav = useNavigate();
-  const [patient, setPatient] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [guard, setGuard] = useState(null); // {contact, check}
   const [listening, setListening] = useState(false);
@@ -35,11 +34,8 @@ export default function PatientHome() {
   const [newName, setNewName] = useState("");
 
   useEffect(() => {
-    getPatient().then(async (p) => {
-      setPatient(p);
-      setContacts(await api.get(`/patients/${p.id}/contacts`));
-    });
-  }, []);
+    api.get(`/patients/${patient.id}/contacts`).then(setContacts);
+  }, [patient.id]);
 
   const primary = contacts.find((c) => c.primary_caregiver);
 
@@ -89,8 +85,6 @@ export default function PatientHome() {
     setNotice(msg);
     speak(msg);
   }
-
-  if (!patient) return <div className="patient-shell loading">Loading…</div>;
 
   return (
     <div className="patient-shell">

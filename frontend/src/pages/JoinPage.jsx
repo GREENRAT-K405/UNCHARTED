@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { api } from "../lib/api.js";
+import { useParams, useSearchParams } from "react-router-dom";
+import { api, setIdentity } from "../lib/api.js";
 import { speechSupported } from "../lib/speech.js";
 import CallPage from "./CallPage.jsx";
 
 /** Receiver side: zero install, explicit consent before anything is transcribed. */
 export default function JoinPage() {
   const { callId } = useParams();
+  const [params] = useSearchParams();
+  setIdentity(null); // the family member joining has no account; the link's token is their pass
   const [info, setInfo] = useState(null);
   const [error, setError] = useState(null);
   const [joined, setJoined] = useState(false);
 
   useEffect(() => {
-    api.get(`/calls/${callId}/receiver`).then(setInfo).catch((e) => setError(e.message));
+    api.get(`/calls/${callId}/receiver?t=${encodeURIComponent(params.get("t") || "")}`)
+      .then(setInfo).catch((e) => setError(e.message));
   }, [callId]);
 
   if (joined) return <CallPage role="contact" />;
