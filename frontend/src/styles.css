@@ -114,20 +114,27 @@ input:hover:not(:disabled), textarea:hover:not(:disabled), select:hover:not(:dis
 /* ---------- patient home ---------- */
 .patient-shell { min-height: 100%; padding: 32px clamp(16px, 4vw, 48px) 120px; max-width: 1280px; margin: 0 auto; }
 .patient-header { display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; margin-bottom: 28px; }
-.hello { font-size: clamp(2rem, 4.5vw, 3rem); font-weight: 700; letter-spacing: -0.01em; }
-.today { font-size: 1.4rem; color: var(--ink-2); margin-top: 4px; }
-.mic-btn { display: flex; align-items: center; gap: 16px; padding: 18px 28px; font-size: 1.4rem; font-weight: 700; border-radius: 999px; border: none; background: var(--brand); color: #fff; box-shadow: var(--shadow); }
-.mic-btn.listening { background: var(--accent); animation: pulse 1.2s infinite; }
+.hello { font-family: var(--font-display); font-size: clamp(2.2rem, 4.5vw, 3.2rem); font-weight: 600; line-height: 1.1; letter-spacing: -0.015em; margin: 0; }
+.today { font-size: 1.35rem; color: var(--ink-2); margin-top: 6px; }
+.mic-btn { display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 14px 28px; font-size: 1.3rem; font-weight: 700; border-radius: 999px; border: 2px solid #b9d0c5; background: var(--brand-soft); color: var(--brand-strong); transition: background-color var(--dur-2) var(--ease), transform var(--dur-1) var(--ease); }
+.mic-btn:hover { background: #cde0d5; }
+.mic-btn:active { transform: scale(0.98); }
+.mic-btn.listening { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); animation: pulse 1.6s var(--ease) infinite; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(233, 185, 73, 0.55); } 50% { box-shadow: 0 0 0 16px rgba(233, 185, 73, 0); } }
 .patient-notice { background: var(--warn-soft); color: var(--ink); font-size: 1.4rem; padding: 18px 24px; border-radius: var(--radius); margin-bottom: 24px; }
 .contact-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 24px; }
-.contact-tile { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 16px 24px; background: var(--card); border: 3px solid transparent; border-radius: 28px; box-shadow: var(--shadow); transition: transform 0.12s, border-color 0.12s; }
-.contact-tile:hover, .contact-tile:focus-visible { transform: translateY(-3px); border-color: var(--brand); outline: none; }
-.contact-tile:active { transform: scale(0.98); }
-.tile-name { font-size: 2.1rem; font-weight: 700; margin-top: 8px; }
-.tile-rel { font-size: 1.35rem; color: var(--ink-2); }
+@media (max-width: 520px) { .contact-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; } .patient-header { margin-bottom: 20px; } .mic-btn { width: 100%; justify-content: center; font-size: 1.2rem; } }
+.contact-tile { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 16px 24px; background: var(--card); color: var(--ink); font: inherit; border: 3px solid transparent; border-radius: var(--r-lg); box-shadow: var(--shadow); transition: transform var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease); }
+.contact-tile:hover { transform: translateY(-3px); border-color: var(--brand); box-shadow: 0 10px 28px rgba(40, 30, 10, 0.10); }
+.contact-tile:focus-visible { border-color: var(--brand); outline: 4px solid rgba(27, 84, 70, 0.28); outline-offset: 2px; }
+.contact-tile:active { transform: scale(0.985); }
+.tile-name { font-family: var(--font-display); font-size: 2.1rem; font-weight: 600; line-height: 1.1; margin-top: 8px; }
+.tile-rel { font-size: 1.3rem; color: var(--ink-2); }
 .tile-new .tile-name { font-size: 1.7rem; }
-.emergency { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; background: var(--bad); color: #fff; border: none; font-size: 1.5rem; font-weight: 700; padding: 18px 36px; border-radius: 999px; box-shadow: 0 8px 30px rgba(178, 58, 58, 0.35); max-width: calc(100% - 32px); }
+.emergency { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; width: max-content; max-width: calc(100vw - 32px); min-height: 60px; background: var(--bad); color: #fff; border: none; font-size: 1.4rem; font-weight: 700; padding: 14px 32px; border-radius: 999px; box-shadow: 0 0 0 6px var(--paper), 0 10px 26px rgba(178, 58, 58, 0.28); transition: background-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
+.emergency:hover { background: #9c2f2f; }
+.emergency:active { transform: translateX(-50%) scale(0.985); }
+@media (max-width: 520px) { .emergency { font-size: 1.2rem; padding: 12px 20px; bottom: 16px; left: 72px; right: 16px; transform: none; width: auto; max-width: none; justify-content: center; } .emergency:active { transform: scale(0.985); } }
 .em-dot { width: 16px; height: 16px; border-radius: 50%; background: #fff; flex: none; }
 
 .modal-backdrop { position: fixed; inset: 0; background: rgba(30, 27, 22, 0.55); display: grid; place-items: center; padding: 16px; z-index: 50; }

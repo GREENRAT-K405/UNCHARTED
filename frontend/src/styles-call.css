@@ -96,10 +96,10 @@
 .ring-btn.decline { background: #b23a3a; }
 
 /* ---------- patient home: recap line, family menu, someone-else screen ---------- */
-.tile-recap { font-size: 1.2rem; line-height: 1.35; color: var(--ink-2); text-align: center; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--paper-2); max-width: 100%; }
-.family-corner { position: fixed; left: 14px; bottom: 14px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper-2); color: var(--ink-3); display: grid; place-items: center; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; z-index: 20; }
+.tile-recap { font-size: 1.15rem; line-height: 1.4; color: var(--ink-2); text-align: center; margin-top: 4px; padding-top: 12px; border-top: 2px solid var(--paper-2); max-width: 100%; }
+.family-corner { position: fixed; left: 14px; bottom: 14px; width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper-2); color: var(--ink-3); display: grid; place-items: center; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; z-index: 20; }
 .family-corner > svg:first-child { grid-area: 1 / 1; }
-.hold-ring { grid-area: 1 / 1; width: 44px; height: 44px; transform: rotate(-90deg); }
+.hold-ring { grid-area: 1 / 1; width: 48px; height: 48px; transform: rotate(-90deg); }
 .hold-ring circle { fill: none; stroke: var(--brand); stroke-width: 3; stroke-dasharray: 113.1; stroke-dashoffset: 113.1; }
 .family-corner.holding .hold-ring circle { transition: stroke-dashoffset 3s linear; stroke-dashoffset: 0; }
 .family-menu { max-width: 520px; display: flex; flex-direction: column; gap: 12px; }
@@ -130,9 +130,10 @@
 .archive-label { display: flex; flex-direction: column; gap: 4px; font-weight: 700; font-size: 0.95rem; }
 
 /* "Join the family call": the one big button on the patient's home screen */
-.join-family { display: flex; align-items: center; justify-content: center; gap: 22px; width: 100%; margin: 0 0 28px; padding: 28px 24px; border: none; border-radius: 28px; background: var(--brand); color: #fff; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; box-shadow: var(--shadow); }
-.join-family:hover:not(:disabled), .join-family:focus-visible { filter: brightness(1.1); outline: 4px solid rgba(31, 92, 79, 0.3); }
-.join-family:active { transform: scale(0.99); }
+.join-family { display: flex; align-items: center; justify-content: center; gap: 22px; width: 100%; min-height: 104px; margin: 0 0 28px; padding: 28px 24px; border: none; border-radius: var(--r-lg); background: var(--brand); color: #fff; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; box-shadow: var(--shadow); transition: background-color var(--dur-2) var(--ease), transform var(--dur-1) var(--ease); }
+.join-family:hover:not(:disabled) { background: var(--brand-strong); }
+.join-family:focus-visible { outline: 4px solid rgba(27, 84, 70, 0.35); outline-offset: 4px; }
+.join-family:active { transform: scale(0.992); }
 
 /* relatives' own page (/family) and the "keep this link" card */
 .family-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
