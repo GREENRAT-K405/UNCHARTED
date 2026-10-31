@@ -55,23 +55,23 @@
 @media (max-width: 900px) { .about-panel { width: 100%; max-height: 45vh; } }
 
 /* ---------- the relative's panel ---------- */
-.rel-panel { width: 340px; flex: none; background: var(--paper); color: var(--ink); overflow: auto; padding: 16px 18px 24px; display: flex; flex-direction: column; gap: 16px; border-left: 1px solid #3a342c; }
-.rel-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; }
-.rel-panel section { display: flex; flex-direction: column; gap: 6px; }
-.rel-panel ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.rel-panel { width: 360px; flex: none; background: var(--paper); color: var(--ink); overflow: auto; padding: 16px 16px 28px; display: flex; flex-direction: column; gap: 12px; }
+.rel-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.2rem; padding: 2px 4px; }
+.rel-panel section { display: flex; flex-direction: column; gap: 8px; background: var(--card); border-radius: var(--radius); padding: 14px 16px 16px; }
+.rel-panel ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .rel-panel p { margin: 0; line-height: 1.45; }
-.rel-title { font-weight: 700; color: var(--brand); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; }
-.rel-onscreen { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; line-height: 1.4; }
+.rel-title { font-weight: 700; color: var(--brand); font-size: 1.02rem; }
+.rel-onscreen { background: var(--paper); border-radius: var(--r-sm); padding: 10px 12px; line-height: 1.45; }
 .rel-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .rel-chips .chip button { background: none; border: none; color: inherit; font-weight: 700; padding: 0 0 0 2px; }
-.rel-pick { display: flex; flex-direction: column; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; max-height: 220px; overflow: auto; }
-.rel-fine { font-size: 0.82rem; color: var(--ink-3); }
-.rel-hints { background: var(--warn-soft); border-radius: 12px; padding: 10px 12px; }
+.rel-pick { display: flex; flex-direction: column; gap: 4px; background: var(--paper); border-radius: var(--r-sm); padding: 10px 12px; max-height: 220px; overflow: auto; }
+.rel-fine { font-size: 0.9rem; color: var(--ink-3); }
+.rel-panel .rel-hints { background: var(--warn-soft); }
 .rel-known { list-style: none; padding: 0 !important; }
 .rel-known li { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
 @media (max-width: 900px) {
   .call.with-panel { flex-direction: column; }
-  .rel-panel { width: 100%; max-height: 40vh; border-left: none; border-top: 1px solid #3a342c; }
+  .rel-panel { width: 100%; max-height: 40vh; }
 }
 
 /* ---------- contact link: waiting room and ringing ---------- */
@@ -79,19 +79,22 @@
 .contact-page h2 { margin: 0; font-size: 1.3rem; }
 .cl-status { display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--ink-2); margin: 0; }
 .cl-missed { background: var(--warn-soft); border-radius: 12px; padding: 10px 14px; margin: 0; }
-.cl-update { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; font-size: 1.05rem; resize: vertical; }
+.cl-update { width: 100%; padding: 12px 14px; min-height: 96px; border: 2px solid var(--line); border-radius: var(--r-sm); background: var(--card); font-size: 1.05rem; line-height: 1.45; resize: vertical; }
 .cl-calls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.cl-calls li { display: flex; flex-direction: column; gap: 2px; padding-bottom: 10px; border-bottom: 1px solid var(--paper-2); }
+.cl-calls li { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; background: var(--paper); border-radius: var(--r-sm); }
 .contact-page .auth-notice ul { margin: 6px 0 0; padding-left: 20px; }
-.ringing { position: fixed; inset: 0; background: radial-gradient(circle at 50% 35%, #24493f, #10221d); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px 16px; text-align: center; }
+.ringing { position: fixed; inset: 0; background: #163a31; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px 16px; text-align: center; }
 .ringing h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); }
-.ringing p { margin: 0; color: #cfe3db; font-size: 1.1rem; }
+.ringing p { margin: 0; color: #d6e8e0; font-size: 1.2rem; max-width: 34ch; line-height: 1.45; }
 .ring-avatar { border-radius: 50%; animation: ringpulse 1.6s infinite; }
 @keyframes ringpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(127, 208, 184, 0.55); } 50% { box-shadow: 0 0 0 26px rgba(127, 208, 184, 0); } }
 .ring-actions { display: flex; gap: 28px; margin-top: 12px; flex-wrap: wrap; justify-content: center; }
-.ring-btn { border: none; color: #fff; font-size: 1.4rem; font-weight: 700; padding: 18px 40px; border-radius: 999px; min-width: 160px; }
-.ring-btn.accept { background: #2f9a5f; }
-.ring-btn.decline { background: #b23a3a; }
+.ring-btn { border: none; color: #fff; font-size: 1.4rem; font-weight: 700; min-height: 68px; padding: 16px 40px; border-radius: 999px; min-width: 170px; transition: background-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
+.ring-btn:active { transform: scale(0.97); }
+.ring-btn.accept { background: #2a8a55; }
+.ring-btn.accept:hover { background: #237548; }
+.ring-btn.decline { background: #a83a3a; }
+.ring-btn.decline:hover { background: #8f3030; }
 
 /* ---------- patient home: recap line, family menu, someone-else screen ---------- */
 .tile-recap { font-size: 1.15rem; line-height: 1.4; color: var(--ink-2); text-align: center; margin-top: 4px; padding-top: 12px; border-top: 2px solid var(--paper-2); max-width: 100%; }
@@ -138,7 +141,7 @@
 .family-who { display: flex; align-items: center; gap: 16px; }
 .family-who h1 { margin: 0; }
 .family-pick { display: flex; gap: 8px; flex-wrap: wrap; flex-direction: row; }
-.keep-link { gap: 8px; }
+.keep-link { gap: 8px; background: var(--paper-2); box-shadow: none; }
 .keep-link p { margin: 0; }
-.link-input { font-size: 1rem; padding: 10px 12px; }
+.link-input { font-size: 1rem; padding: 12px 14px; }
 .family-avatar { background: #1f5c4f; color: #fff; }

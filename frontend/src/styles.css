@@ -172,7 +172,9 @@ input:hover:not(:disabled), textarea:hover:not(:disabled), select:hover:not(:dis
 .brief-icon { color: var(--brand); flex: none; margin-top: 2px; }
 .brief-text { flex: 1; }
 .thumbs { display: flex; gap: 4px; flex: none; }
-.thumbs button { background: var(--paper-2); border: 1px solid var(--line); border-radius: 10px; font-size: 1.2rem; padding: 4px 8px; }
+.thumbs button { background: var(--paper-2); border: none; border-radius: 10px; font-size: 1.15rem; min-width: 40px; min-height: 40px; padding: 4px 8px; transition: background-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
+.thumbs button:hover { background: #e3dbca; }
+.thumbs button:active { transform: scale(0.94); }
 .brief-suggest { background: var(--brand-soft); border-radius: 18px; padding: 16px 20px; }
 .brief-suggest-label { font-weight: 700; color: var(--brand); font-size: 1.1rem; margin-bottom: 6px; }
 .brief-suggest-item { font-size: clamp(1.3rem, 2.4vw, 1.6rem); line-height: 1.4; }
@@ -216,12 +218,17 @@ input:hover:not(:disabled), textarea:hover:not(:disabled), select:hover:not(:dis
 
 /* ---------- join ---------- */
 .join { min-height: 100%; display: grid; place-items: center; padding: 24px 16px; }
-.join-card { background: var(--card); border-radius: 24px; padding: clamp(20px, 4vw, 40px); max-width: 620px; width: 100%; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 18px; }
-.join-kicker { color: var(--brand); font-weight: 700; }
-.join-card h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 2.4rem); }
-.consent { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; line-height: 1.5; }
+.join-card { background: var(--card); border-radius: var(--r-lg); padding: clamp(22px, 4vw, 40px); max-width: 620px; width: 100%; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 16px; }
+.join-card h1, .join-card h2, .join-card p, .join-card ul { margin: 0; }
+.join-card ul { padding-left: 20px; }
+.join-card > .btn { align-self: flex-start; padding-inline: 24px; }
+@media (max-width: 520px) { .join-card > .btn { align-self: stretch; } }
+.join-kicker { color: var(--brand); font-weight: 700; font-size: 1.1rem; }
+.join-card h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.9rem, 4vw, 2.5rem); line-height: 1.12; letter-spacing: -0.01em; }
+.join-card h2 { font-size: 1.35rem; line-height: 1.25; }
+.consent { background: var(--paper); border-radius: var(--radius); padding: 18px 20px; line-height: 1.5; }
 .consent ul { margin: 8px 0 0; padding-left: 20px; color: var(--ink-2); }
-.receiver-notes { background: var(--info-soft); border-radius: 14px; padding: 14px 18px; color: var(--ink); }
+.receiver-notes { background: var(--info-soft); border-radius: var(--radius); padding: 16px 20px; color: var(--ink); }
 .rn-title { font-weight: 700; color: var(--info); margin-bottom: 4px; }
 
 /* ---------- caregiver ---------- */
