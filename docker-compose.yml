@@ -1,0 +1,14 @@
+# Local MongoDB with Atlas features (Vector Search, change streams, TTL).
+# For the real demo, point MONGODB_URI at an Atlas M0 cluster instead.
+services:
+  mongodb:
+    image: mongodb/mongodb-atlas-local:8.0
+    hostname: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - pehchaan-data:/data/db
+      - pehchaan-config:/data/configdb
+volumes:
+  pehchaan-data:
+  pehchaan-config:
