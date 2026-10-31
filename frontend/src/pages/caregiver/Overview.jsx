@@ -11,6 +11,7 @@ const ACTION_LABEL = {
   created: "added", corrected: "corrected", approved: "approved", rejected: "rejected", deleted: "forgot",
   superseded: "replaced", reweighted: "re-weighted", "visibility:never_surface": "made private",
   "visibility:caregiver_only": "hid from the patient", "visibility:patient": "showed to the patient",
+  identity_asked: "asked “who is this?” more than once about", archived: "archived", unarchived: "unarchived",
 };
 
 function hourLabel(h) {
@@ -141,8 +142,17 @@ export default function Overview({ ctx, feed, liveTranscript }) {
 
           <div className="panel">
             <div className="panel-title">Recurring confusions <span className="panel-sub">things {patient.name} believed that didn't match your records</span></div>
-            {stats.confusions.length === 0 && <div className="empty">None so far.</div>}
+            {stats.confusions.length === 0 && !stats.who_asks?.length && <div className="empty">None so far.</div>}
             <ul className="confusions">
+              {stats.who_asks?.filter((w) => w.asks > 1).map((w) => (
+                <li key={w.contact_id}>
+                  <span className="conf-times">{w.asks}×</span>
+                  <span>
+                    Asked who {w.name} was{w.repeated_calls ? ` (more than once on ${w.repeated_calls} ${w.repeated_calls === 1 ? "call" : "calls"})` : ""}
+                    <span className="muted small"> · {w.calls} {w.calls === 1 ? "call" : "calls"} · last {relTime(w.last, ctx.offsetMs)} · “Who is this?” card</span>
+                  </span>
+                </li>
+              ))}
               {stats.confusions.map((c) => (
                 <li key={c.content}>
                   <span className="conf-times">{c.times}×</span>
@@ -167,7 +177,7 @@ export default function Overview({ ctx, feed, liveTranscript }) {
               {stats.activity.length === 0 && <li className="empty">No edits yet.</li>}
               {stats.activity.map((a) => (
                 <li key={a.id}>
-                  <b>{a.actor}</b> {ACTION_LABEL[a.action] || a.action.replace("feedback:", "marked ")}
+                  <b>{a.actor === "patient" ? patient.name : a.actor}</b> {ACTION_LABEL[a.action] || a.action.replace("feedback:", "marked ")}
                   {a.memory ? <> “<span className="clickable link-like" onClick={() => openMemory(a.memory.id)}>{a.memory.content}</span>”</> : " a memory that has since been forgotten"}
                   <span className="muted small"> · {relTime(a.ts, ctx.offsetMs)}</span>
                 </li>
@@ -271,6 +281,12 @@ export default function Overview({ ctx, feed, liveTranscript }) {
                   <span className="feed-text">
                     {e.call.status === "blocked" ? `Repeat-call guard paused a call to ${name(e.call.contact_id)}` : `Call with ${name(e.call.contact_id)} is ${e.call.status}`}
                   </span>
+                </>
+              )}
+              {e.type === "contact_update" && (
+                <>
+                  <Chip tone="info">update</Chip>
+                  <span className="feed-text">{e.contact_name} shared an update from their link{e.summary ? `: ${e.summary}` : ""}</span>
                 </>
               )}
               {e.type === "contact_request" && (

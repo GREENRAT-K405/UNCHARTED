@@ -10,7 +10,7 @@ from datetime import datetime, time
 
 from bson import ObjectId
 
-from .. import clock, db, embeddings, llm
+from .. import clock, db, embeddings, lang, llm
 from .. import memory_store as ms
 from ..config import settings
 from . import offline
@@ -69,21 +69,24 @@ async def _transcript(call_id: ObjectId) -> list[dict]:
     return lines
 
 
-async def _extract(lines, contact, patient, existing, call_date) -> tuple[dict, str]:
+async def _extract(lines, contact, patient, existing, call_date, written: bool = False) -> tuple[dict, str]:
     transcript = "\n".join(
         f"[{(patient['name'] if l['speaker'] == 'patient' else contact['name'])} ({l['speaker']})]: {l['text']}"
         for l in lines
     )
     known = "\n".join(f"- ({m['type']}, trust {m['trust']}) {m['content']}" for m in existing) or "- (nothing yet)"
+    kind = (f"This is not a call: {contact['name']} wrote this update on their Pehchaan link for the family. "
+            f"Every line is said by {contact['name']}.\n" if written else "")
     user = (
-        f"Call date: {call_date.strftime('%A %Y-%m-%d')} (timezone {settings.timezone}).\n"
-        f"Patient: {patient['name']}. Contact: {contact['name']}, the patient's {contact.get('relation', 'contact')}.\n\n"
-        f"Already known about {contact['name']}:\n{known}\n\nTranscript:\n{transcript}"
+        f"{kind}{'Date' if written else 'Call date'}: {call_date.strftime('%A %Y-%m-%d')} (timezone {settings.timezone}).\n"
+        f"Patient: {patient['name']} (language: {lang.name(patient.get('language'))}). "
+        f"Contact: {contact['name']}, the patient's {contact.get('relation', 'contact')}.\n\n"
+        f"Already known about {contact['name']}:\n{known}\n\n{'Update' if written else 'Transcript'}:\n{transcript}"
     )
     result = await llm.structured(EXTRACT_SYSTEM, user, EXTRACT_SCHEMA, effort="medium")
     if result is not None:
         return result, llm.status["mode"]
-    return offline.extract(lines, contact, patient["name"], call_date), "offline"
+    return offline.extract(lines, contact, patient["name"], call_date, generic=written), "offline"
 
 
 async def _reconcile(items: list[dict]) -> dict:
@@ -108,12 +111,9 @@ async def process_call(call_id: ObjectId) -> dict:
         raise ValueError("call not found")
     contact = await db.contacts.find_one({"_id": call["contact_id"]})
     patient = await db.users.find_one({"_id": call["patient_id"]})
-    owner_id = patient["_id"]
     await db.calls.update_one({"_id": call_id}, {"$set": {"status": "processing"}})
 
     lines = await _transcript(call_id)
-    existing = [m async for m in db.memories.find(
-        {"owner_id": owner_id, "contact_id": contact["_id"], "status": "active"})]
     call_date = (call.get("started_at") or clock.now()).astimezone(settings.tz)
 
     if not lines:
@@ -122,7 +122,33 @@ async def process_call(call_id: ObjectId) -> dict:
             "recap": f"You just talked to {contact['name']}.", "agent": {"actions": []}}})
         return {"actions": []}
 
-    extracted, mode = await _extract(lines, contact, patient, existing, call_date)
+    extracted, mode, actions = await remember(lines, contact, patient, call_date, source_kind="call", call_id=call_id)
+    await db.calls.update_one({"_id": call_id}, {"$set": {
+        "status": "processed",
+        "summary": extracted.get("summary", ""),
+        "recap": extracted.get("patient_recap", ""),
+        "processed_at": clock.now(),
+        "agent": {"mode": mode, "candidates": len(extracted.get("candidates", [])), "actions": actions},
+    }})
+    return {"mode": mode, "actions": actions}
+
+
+async def process_update(contact: dict, patient: dict, text: str, update_id: ObjectId) -> dict:
+    """A written update from the contact's own link ("I got engaged"): the same extract -> reconcile ->
+    trust guard -> write path as a call, with the contact as the speaker."""
+    lines = [{"speaker": "contact", "text": text.strip(), "ts": clock.now()}]
+    extracted, mode, actions = await remember(lines, contact, patient, clock.now().astimezone(settings.tz),
+                                              source_kind="contact_update", update_id=update_id)
+    return {"mode": mode, "summary": extracted.get("summary", ""), "actions": actions}
+
+
+async def remember(lines: list[dict], contact: dict, patient: dict, when: datetime, *, source_kind: str,
+                   call_id: ObjectId | None = None, update_id: ObjectId | None = None) -> tuple[dict, str, list[dict]]:
+    """Extract candidates, find neighbours, reconcile, and apply each decision behind the trust guard."""
+    owner_id = patient["_id"]
+    existing = [m async for m in db.memories.find(
+        {"owner_id": owner_id, "contact_id": contact["_id"], "status": "active"})]
+    extracted, mode = await _extract(lines, contact, patient, existing, when, written=source_kind == "contact_update")
     candidates = extracted.get("candidates", [])
 
     # Find neighbours for every candidate (vector search + same-type structural facts).
@@ -153,33 +179,40 @@ async def process_call(call_id: ObjectId) -> dict:
         decisions[item["index"]] = {"candidate_index": item["index"], "action": "ADD", "target_id": None,
                                     "merged_content": None, "reason": "no similar memory exists"}
 
+    source = {"kind": source_kind}
+    if call_id:
+        source["call_id"] = call_id
+    if update_id:
+        source["update_id"] = update_id
     actions = []
     for item in fast_add + to_reconcile:
         decision = decisions.get(item["index"]) or {"action": "ADD", "target_id": None, "merged_content": None,
                                                     "reason": "no decision returned"}
         try:
-            actions.append(await _apply(item, decision, owner_id, contact, call_id))
+            actions.append(await _apply(item, decision, owner_id, contact, source))
         except Exception as e:  # keep processing the rest of the candidates
             log.exception("failed to apply decision %s", decision)
             actions.append({"action": "ERROR", "content": item["candidate"]["content"], "reason": str(e)})
-
-    await db.calls.update_one({"_id": call_id}, {"$set": {
-        "status": "processed",
-        "summary": extracted.get("summary", ""),
-        "recap": extracted.get("patient_recap", ""),
-        "processed_at": clock.now(),
-        "agent": {"mode": mode, "candidates": len(candidates), "actions": actions},
-    }})
-    return {"mode": mode, "actions": actions}
+    return extracted, mode, actions
 
 
-async def _apply(item: dict, decision: dict, owner_id: ObjectId, contact: dict, call_id: ObjectId) -> dict:
+async def _apply(item: dict, decision: dict, owner_id: ObjectId, contact: dict, origin_source: dict) -> dict:
     cand, trust = item["candidate"], item["trust"]
     action = decision["action"]
     target = None
     if decision.get("target_id"):
         target = await db.memories.find_one({"_id": ms.oid(decision["target_id"])})
         if target is None and action != "ADD":
+            action = "ADD"
+
+    # A fact or plan never replaces (or conflicts with) who someone is: if the LLM paired a candidate with
+    # the relationship memory, use the closest neighbour of the candidate's own type instead, or add it.
+    if target is not None and target["type"] == "relationship" and cand["type"] != "relationship" \
+            and action in ("UPDATE", "SUPERSEDE", "CONFLICT"):
+        same = sorted((n for n in item["neighbours"] if n["type"] == cand["type"]), key=lambda n: -n["similarity"])
+        target = await db.memories.find_one({"_id": ms.oid(same[0]["id"])}) if same else None
+        decision["reason"] = f"{decision.get('reason', '')} (retargeted: not about the relationship)".strip()
+        if target is None:
             action = "ADD"
 
     # Code-level guard, regardless of what the LLM decided.
@@ -206,7 +239,7 @@ async def _apply(item: dict, decision: dict, owner_id: ObjectId, contact: dict, 
         status = "pending_review"  # patient claims about others are never auto-trusted
 
     source = {
-        "kind": "call", "origin": item["source_kind"], "call_id": call_id, "speaker": cand["speaker"],
+        **origin_source, "origin": item["source_kind"], "speaker": cand["speaker"],
         "quote": cand.get("quote", "")[:300],
     }
     common = dict(owner_id=owner_id, contact_id=contact["_id"], type=mtype, source=source, trust=trust,
@@ -219,7 +252,7 @@ async def _apply(item: dict, decision: dict, owner_id: ObjectId, contact: dict, 
     if action == "IGNORE" and target is not None:
         await db.memories.update_one({"_id": target["_id"]},
                                      {"$set": {"updated_at": clock.now()}, "$inc": {"reinforced": 1}})
-        await ms.log_event(target["_id"], "reinforced", owner_id, "agent", call_id)
+        await ms.log_event(target["_id"], "reinforced", owner_id, "agent", origin_source.get("call_id"))
         result["memory_id"] = str(target["_id"])
     elif action == "UPDATE" and target is not None:
         extra = {}

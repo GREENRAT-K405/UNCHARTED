@@ -22,8 +22,8 @@ export default function JoinPage() {
   if (error) return <div className="join"><div className="join-card"><h2>This call link isn't valid</h2><p>{error}</p></div></div>;
   if (!info) return <div className="join"><div className="join-card">Loading…</div></div>;
 
-  const { patient, contact, call, notes } = info;
-  const over = ["ended", "processing", "processed"].includes(call.status);
+  const { patient, contact, call, notes, view } = info;
+  const over = ["ended", "processing", "processed", "unanswered", "declined", "cancelled"].includes(call.status);
   return (
     <div className="join">
       <div className="join-card">
@@ -38,17 +38,19 @@ export default function JoinPage() {
             <li>To keep something from {patient.name}, say "don't tell {patient.name} about …" and it stays with the family only.</li>
           </ul>
         </div>
-        {notes.length > 0 && (
+        {(notes.length > 0 || view?.hints?.length > 0 || view?.talking_points?.length > 0) && (
           <div className="receiver-notes">
             <div className="rn-title">Good to know before you talk</div>
             {notes.map((n, i) => <div key={i}>{n}</div>)}
+            {view?.hints?.map((h, i) => <div key={`h${i}`}><b>If {patient.name} asks about {h.name}:</b> {h.note}</div>)}
+            {view?.talking_points?.length > 0 && <div><b>You could ask:</b> {view.talking_points.join(" · ")}</div>}
           </div>
         )}
         {!speechSupported && (
           <p className="fine">Live transcription needs Chrome. You can still type what you said during the call.</p>
         )}
         <button className="btn-big btn-primary" disabled={over} onClick={() => setJoined(true)}>
-          {over ? "This call has ended" : "I agree, join the call"}
+          {over ? (call.status === "unanswered" ? "This call was missed" : "This call has ended") : "I agree, join the call"}
         </button>
       </div>
     </div>

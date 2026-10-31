@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api.js";
 import { Chip, fmtDateTime, relTime } from "../../components/common.jsx";
+import { LANGUAGES } from "../../lib/i18n.js";
 
 const ROLE_HELP = {
   owner: "Everything, including inviting family and unpairing devices",
@@ -10,6 +11,7 @@ const ROLE_HELP = {
 const EVENT_LABEL = {
   sign_in: "signed in", device_paired: "paired a tablet", device_unpaired: "unpaired a tablet",
   member_joined: "joined the circle", member_removed: "removed a member", circle_created: "created the circle",
+  patient_login_linked: "linked their own sign-in", patient_login_removed: "removed the patient's sign-in",
 };
 
 export default function Family({ ctx, refreshMe }) {
@@ -24,11 +26,17 @@ export default function Family({ ctx, refreshMe }) {
   const [pair, setPair] = useState({ code: "", label: `${patient.name}'s tablet` });
   const [msg, setMsg] = useState(null);
   const [n, setN] = useState(0);
+  const [login, setLogin] = useState(null);
+  const [loginCode, setLoginCode] = useState(null);
+  const [language, setLanguage] = useState(patient.language || "en-IN");
+  const [speech, setSpeech] = useState(null);
 
   useEffect(() => {
     api.get(`/circles/${patient.id}/members`).then(setMembers);
     api.get(`/circles/${patient.id}/devices`).then(setDevices);
+    api.get(`/circles/${patient.id}/login`).then(setLogin);
     if (isOwner) api.get(`/circles/${patient.id}/access-log`).then(setLog);
+    api.get(`/patients/${patient.id}/speech-status`).then((s) => { setSpeech(s.status); setLanguage(s.language); });
   }, [patient.id, tick, n]);
 
   const reload = () => setN((x) => x + 1);
@@ -53,6 +61,24 @@ export default function Family({ ctx, refreshMe }) {
   async function unpair(d) {
     if (!confirm(`Unpair "${d.label}"? It will show the setup screen again until someone pairs it.`)) return;
     await api.del(`/devices/${d.id}`);
+    reload();
+  }
+
+  async function makeLoginCode() {
+    setLoginCode(await api.post(`/circles/${patient.id}/invites`, { role: "patient" }));
+  }
+
+  async function removeLogin() {
+    if (!confirm(`Remove ${patient.name}'s own sign-in (${login.email || "their account"})? Paired tablets keep working.`)) return;
+    await api.del(`/circles/${patient.id}/login`);
+    setLoginCode(null);
+    reload();
+  }
+
+  async function saveLanguage(value) {
+    setLanguage(value);
+    await api.patch(`/patients/${patient.id}`, { language: value });
+    await refreshMe();
     reload();
   }
 
@@ -135,6 +161,61 @@ export default function Family({ ctx, refreshMe }) {
         </div>
 
         <div className="col">
+          <div className="panel">
+            <div className="panel-title">{patient.name}'s language <span className="panel-sub">speech recognition, read-aloud and the card's wording</span></div>
+            <div className="row">
+              <select value={language} disabled={!canEdit} onChange={(e) => saveLanguage(e.target.value)} aria-label="Language">
+                {Object.entries(LANGUAGES).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+              </select>
+              {speech && speech.language === language && (
+                speech.voice_found
+                  ? <Chip tone="good">voice on {speech.device}: {speech.voice_name}</Chip>
+                  : <Chip tone="warn">no {LANGUAGES[language]} voice on {speech.device}: reading in English</Chip>
+              )}
+            </div>
+            <p className="muted small">
+              {patient.name}'s screen reports which voices it has when it opens. Without a voice for the language, read-aloud
+              falls back to Indian English. The memory agent writes the card and the after-call recap in this language
+              (the offline agent stays in English).
+            </p>
+          </div>
+
+          <div className="panel">
+            <div className="panel-title">{patient.name}'s own sign-in <span className="panel-sub">Google or email, on any phone or tablet</span></div>
+            {login?.linked ? (
+              <ul className="device-list"><li>
+                <div>
+                  <b>{login.email || "Their account"}</b> <Chip tone="good">linked</Chip>
+                  <div className="muted small">
+                    {login.provider === "google.com" ? "Google" : "Email"}{login.self_registered && " · signed up on their own"}
+                    {login.last_seen && ` · active ${relTime(login.last_seen, ctx.offsetMs)}`}
+                  </div>
+                </div>
+                {isOwner && <button className="btn-ghost danger" onClick={removeLogin}>Remove</button>}
+              </li></ul>
+            ) : (
+              <p className="muted small">
+                {patient.name} can sign in on their own device. Create a code, then open the link on their device (or they
+                type the code after signing in at <b>/patient</b>).
+              </p>
+            )}
+            {isOwner && (
+              <div className="row">
+                <button className="btn" onClick={makeLoginCode}>{login?.linked ? "Switch to another account" : `Create a sign-in code for ${patient.name}`}</button>
+              </div>
+            )}
+            {loginCode && (
+              <div className="invite-box">
+                <div className="invite-code">{loginCode.code.slice(0, 4)}-{loginCode.code.slice(4)}</div>
+                <div className="row">
+                  <code className="invite-url">{loginCode.url}</code>
+                  <button className="btn-ghost" onClick={() => navigator.clipboard?.writeText(loginCode.url)}>Copy link</button>
+                </div>
+                <div className="muted small">Single use · valid until {fmtDateTime(loginCode.expires_at)}</div>
+              </div>
+            )}
+          </div>
+
           <div className="panel">
             <div className="panel-title">Patient devices <span className="panel-sub">no passwords for {patient.name}</span></div>
             <p className="muted small">

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../../lib/api.js";
 import { useCaregiverAuth } from "../../lib/auth.jsx";
 
@@ -55,6 +56,7 @@ export default function Onboarding() {
           <button className="btn" disabled={!!busy}>{busy === "join" ? "Joining…" : "Join circle"}</button>
         </form>
       </div>
+      <p className="muted center">Just a family member, not the one setting things up? <Link to="/family">Go to your page</Link> to get their calls.</p>
       <p className="muted center">Signed in as {me.email || me.name}. <button className="btn-link" onClick={signOut}>Sign out</button></p>
     </div>
   );

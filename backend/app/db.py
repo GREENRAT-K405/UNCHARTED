@@ -26,13 +26,14 @@ devices = db.devices  # paired patient tablets (anonymous Firebase uid -> patien
 pairing_codes = db.pairing_codes  # short-lived codes shown on an unpaired tablet (TTL)
 invites = db.invites  # family invite codes (TTL)
 auth_events = db.auth_events  # sign-ins, pairings, joins (TTL, 90 days)
+contact_updates = db.contact_updates  # written updates from a contact's own link ("I got engaged")
 embedding_cache = db.embedding_cache  # model+text hash -> vector, so nothing is embedded twice (TTL, 30 days)
 
 # Filled in by ensure_indexes(): tells the rest of the app which Atlas features work.
 capabilities = {"vector_search": False, "change_streams": False, "pre_images": False}
 
 COLLECTIONS = ["users", "contacts", "calls", "transcript_chunks", "memories", "briefs", "memory_events",
-               "memberships", "devices", "pairing_codes", "invites", "auth_events", "embedding_cache"]
+               "memberships", "devices", "pairing_codes", "invites", "auth_events", "embedding_cache", "contact_updates"]
 
 
 async def ensure_indexes() -> None:
@@ -71,6 +72,9 @@ async def ensure_indexes() -> None:
     await calls.create_index([("patient_id", ASCENDING), ("started_at", DESCENDING)])
     await embedding_cache.create_index([("created_at", ASCENDING)], expireAfterSeconds=30 * 24 * 3600, name="embed_cache_ttl")
     await memories.create_index("embedding_model")
+    await contacts.create_index("link_token", unique=True, sparse=True)
+    await contacts.create_index("user_id", sparse=True)  # a relative's own account
+    await contact_updates.create_index([("contact_id", ASCENDING), ("created_at", DESCENDING)])
 
     # Pre-images let the dashboard show *what* expired when TTL deletes a memory.
     try:

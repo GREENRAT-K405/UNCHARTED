@@ -153,3 +153,25 @@
   .auth-side { padding: 28px 20px; }
   .barlist li { grid-template-columns: minmax(90px, 40%) 1fr 36px; }
 }
+
+/* ---------- patient sign-in ---------- */
+.pair-family { gap: 14px; }
+.pair-family .pair-code { font-size: clamp(2.4rem, 8vw, 4rem); }
+.ps-options, .ps-form { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 480px; }
+.ps-google { display: flex; align-items: center; justify-content: center; gap: 14px; font-size: 1.6rem; font-weight: 700; padding: 18px 28px; border-radius: 20px; border: 2px solid #c9ccd1; background: #fff; color: #1f1f1f; }
+.ps-google:hover:not(:disabled) { background: #f6f8fb; }
+.ps-field { display: flex; flex-direction: column; gap: 6px; text-align: left; font-size: 1.3rem; font-weight: 700; color: var(--ink-2); }
+.ps-field .big-input { font-weight: 400; color: var(--ink); }
+.ps-field .big-input:focus { outline: 3px solid var(--brand); outline-offset: 1px; }
+.ps-code { font-family: var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.ps-link { font-size: 1.2rem; }
+.ps-switch { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ps-or { width: 100%; max-width: 480px; font-size: 1.1rem; }
+.ps-error { font-size: 1.2rem; max-width: 480px; }
+.ps-who { color: var(--ink-3); font-size: 1.05rem; margin: 0; }
+.patient-empty { background: var(--card); border-radius: 28px; box-shadow: var(--shadow); padding: 28px; margin-bottom: 24px; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; }
+.patient-empty p { font-size: 1.6rem; margin: 0; line-height: 1.4; }
+.patient-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-top: 32px; color: var(--ink-3); font-size: 1.1rem; }
+.patient-foot .btn-link { font-size: 1.1rem; }
+.patient-invite { font-size: 1.1rem; word-break: break-all; }
+.patient-account-notice { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }

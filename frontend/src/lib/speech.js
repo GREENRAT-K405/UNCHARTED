@@ -48,6 +48,13 @@ export function createTranscriber({ lang = "en-IN", onFinal, onInterim, onError 
         rec?.stop();
       } catch {}
     },
+    /** Stop at once and discard what was heard so far (used while the app reads aloud). */
+    pause() {
+      active = false;
+      try {
+        rec?.abort();
+      } catch {}
+    },
     get active() {
       return active;
     },

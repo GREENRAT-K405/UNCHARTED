@@ -131,7 +131,10 @@ function MemoryDetail({ id, ctx, onFocus, name }) {
       {d.expired_on_demo_clock && <div className="warnbox">Expired on the demo clock; MongoDB TTL will delete it once real time passes {fmtDateTime(m.expires_at)}.</div>}
 
       <div className="kv">
-        <div><span>Source</span>{m.source?.kind === "call" ? `Call · said by ${m.source.speaker} (${m.source.origin})` : m.source?.kind}</div>
+        <div><span>Source</span>{m.source?.kind === "call" ? `Call · said by ${m.source.speaker} (${m.source.origin})`
+          : m.source?.kind === "contact_update" ? `Update from ${name(m.contact_id) || "the contact"}'s link (${m.source.origin})` : m.source?.kind}</div>
+        {m.visibility_before_archive && <div><span>Archived</span>hidden while the person is archived (was {m.visibility_before_archive})</div>}
+        {m.identity_asks > 0 && <div><span>“Who is this?”</span>asked more than once on {m.identity_asks} {m.identity_asks === 1 ? "call" : "calls"}</div>}
         {m.source?.quote && <div><span>Quote</span>“{m.source.quote}”</div>}
         {d.source_call && <div><span>From call</span>{fmtDateTime(d.source_call.started_at)} — {d.source_call.summary}</div>}
         <div><span>Trust / confidence</span>{m.trust} / {m.confidence}</div>
